@@ -572,8 +572,6 @@ class Agent:
         match_step = get_match_step(step)
         match_number = get_match_number(step)
 
-        # print(f"start step={match_step}({step}, {match_number})", file=stderr)
-
         if match_step == 0:
             # nothing to do here at the beginning of the match
             # just need to clean up some of the garbage that was left after the previous match
@@ -594,55 +592,11 @@ class Agent:
         self.fleet.update(obs, self.space)
         self.opp_fleet.update(obs, self.space)
 
-        # self.show_explored_map()
-        # print(match_step, file=stderr)
-
-        # print(match_number, match_step, file=stderr)
-        # print("Visible energy field", file=stderr)
-        # self.show_visible_energy_field()
-        # print("Exploration map", file=stderr)
-        # self.show_exploration_map()
-        # print("Explored map", file=stderr)
-        # self.show_explored_map()
-        # print("Visible map", file=stderr)
-        # self.show_visible_map()
-        # print("Explored energy field", file=stderr)
-        # self.show_explored_energy_field()
-
         self.find_relics()
         self.find_rewards()
         self.harvest()
-        # if match_number == 1:
-        #     for ship in self.fleet.ships:
-        #         print(match_step, ship.unit_id, ship.task, ship.energy, file=stderr)
-        # print(match_number, match_step, file=stderr)
-
         self.sap(enemy_coordinates=obs["units"]["position"][1 - self.team_id])
-
         self.check(match_number, match_step)
-
-        # for ship in self.fleet.ships:
-        #     if ship.action == None and ship.task != "harvest":
-        #         print(
-        #             "match number : ",
-        #             match_number,
-        #             " | match step : ",
-        #             match_step,
-        #             " | unit id : ",
-        #             ship.unit_id,
-        #             " | task : ",
-        #             ship.task,
-        #             " | target : ",
-        #             ship.target,
-        #             " | coordinates : ",
-        #             ship.coordinates,
-        #             " | energy : ",
-        #             ship.energy,
-        #             file=stderr,
-        #         )
-
-        # Vérifier qu'il y a pas des ships qui font rien en coin de map avec de l'énergie
-
         return self.create_actions_array()
 
     def check(self, match_number, match_step):
@@ -672,6 +626,11 @@ class Agent:
         for ship in self.fleet.ships:
             if ship.energy > Global.UNIT_MOVE_COST and ship.action == None:
                 # print(match_number*100+match_step, " | ", ship.unit_id, " | ", ship.coordinates, file=stderr)
+                if ship.node in main_targets or ship.node in main_targets_occupied:
+                    # print("ALREADY ON A REWARD NODE", file=stderr)
+                    ship.task = "harvest"
+                    ship.target = ship.node
+                    continue
                 # print(
                 #     "USELESS SHIP",
                 #     " | match number : ",
@@ -700,22 +659,19 @@ class Agent:
                         for n in main_targets
                     ],
                 )
+                # print("target found : ", target, file=stderr)
                 if target:
                     # print("Veut aller chercher main target en ", target, file=stderr)
                     node = self.space.get_node(*target)
-                    # print(ship.coordinates, target, file=stderr)
-                    if ship.coordinates == target: # Ship is already on its target
-                        ship.tast = "harvest"
-                        ship.target = node
-                        ship.action = ActionType.center
-                        # print("YESSSSS !", file=stderr)
-                        continue
                     main_targets.remove(node)
                     # print("Found a target : ", target, file=stderr)
                     action = self._find_best_single_action(ship, target)
                     ship.action = action
                     # print("Resulting action : ", action, file=stderr)
-                elif target is None:
+                elif target is None and ship.node.coordinates:
+                    # if ship.node in secondary_targets or ship.node in secondary_targets_occupied:
+                    #     # print("ALREADY ON A SECONDARY NODE", file=stderr)
+                    #     continue
                     target, _ = find_closest_target(
                             ship.coordinates,
                         [
@@ -790,13 +746,14 @@ class Agent:
     def sap(self, enemy_coordinates):
 
         # sap enemy if we are not moving (action = center)
-        for xy in enemy_coordinates:
+        for enemy_ship in self.opp_fleet:
+            preshot_xy = self._preshot(enemy_ship)
             for ship in self.fleet.ships:
                 sap_dist = np.inf
                 if ship.coordinates != None:
                     sap_dist = max(
-                        abs(xy[0] - ship.coordinates[0]),
-                        abs(xy[1] - ship.coordinates[1]),
+                        abs(preshot_xy[0] - ship.coordinates[0]),
+                        abs(preshot_xy[1] - ship.coordinates[1]),
                     )
                 # We retrieve the position of the closest ship and tell him to sap
                 if (
@@ -806,69 +763,62 @@ class Agent:
                 ):
                     # print("Ship : ", ship.unit_id, "Distance : ", dist, "Sap range : ", Global.UNIT_SAP_RANGE, "Sap where : ", xy, file=stderr)
                     ship.action = ActionType.sap
-                    ship.sap = xy
+                    ship.sap = preshot_xy
+    
+    def _is_near_relic(self, ship):
+        for relic_node in self.space.relic_nodes:
+            x, y = relic_node.coordinates
+            for xy in nearby_positions(x, y, Global.RELIC_REWARD_RANGE):
+                if ship.coordinates == xy:
+                    return True 
+        return False
 
-        # Sap les mecs sur nos reward nodes
-        # our_reward_nodes_coords = [
-        #     (n.x, n.y)
-        #     for n in self.space.reward_nodes
-        #     if is_team_sector(self.fleet.team_id, *n.coordinates)
-        # ]
-        # for nxy in our_reward_nodes_coords:
-        #     for xy in enemy_coordinates:
-        #         if xy[0] == nxy[0] and xy[1] == nxy[1]:
-        #             # This reward node is occupied by an enemy
-        #             ship, dist = find_closest_ship(xy, self.fleet)
-        #             sap_dist = max(
-        #                 abs(xy[0] - ship.coordinates[0]),
-        #                 abs(xy[1] - ship.coordinates[1]),
-        #             )
-        #             # We retrieve the position of the closest ship and tell him to sap
-        #             if (
-        #                 sap_dist < Global.UNIT_SAP_RANGE
-        #                 and ship.energy > Global.UNIT_SAP_COST
-        #             ):
-        #                 # print("Ship : ", ship.unit_id, "Distance : ", dist, "Sap range : ", Global.UNIT_SAP_RANGE, "Sap where : ", xy, file=stderr)
-        #                 ship.action = ActionType.sap
-        #                 ship.sap = xy
+    def _preshot(self, ship):
+        # Si l'enemy ship est sur un reward node, on considère qu'il est immobile
+        x, y = ship.coordinates
+        if ship.node.reward:
+            # print("Preshot ",  (x,y), file=stderr)
+            return ship.coordinates
 
-        # their_reward_nodes_coords = [
-        #     (n.x, n.y)
-        #     for n in self.space.reward_nodes
-        #     if not is_team_sector(self.fleet.team_id, *n.coordinates)
-        # ]
-        # for nxy in their_reward_nodes_coords:
-        #     for xy in enemy_coordinates:
-        #         if xy[0] == nxy[0] and xy[1] == nxy[1]:
-        #             # This reward node is occupied by an enemy, on le fume par tous les ships possibles
-        #             for ship in self.fleet.ships:
-        #                 sap_dist = np.inf
-        #                 if ship.coordinates != None:
-        #                     sap_dist = max(abs(xy[0] - ship.coordinates[0]), abs(xy[1] - ship.coordinates[1]))
-        #                 # We retrieve the position of the closest ship and tell him to sap
-        #                 if (
-        #                     sap_dist < Global.UNIT_SAP_RANGE
-        #                     and ship.energy > Global.UNIT_SAP_COST
-        #                 ):
-        #                     # print("Ship : ", ship.unit_id, "Distance : ", dist, "Sap range : ", Global.UNIT_SAP_RANGE, "Sap where : ", xy, file=stderr)
-        #                     ship.action = ActionType.sap
-        #                     ship.sap = xy
+        target, _ = find_closest_target(
+                    ship.coordinates,
+                    [
+                        n.coordinates
+                        for n in self.space.reward_nodes
+                    ],
+                )
+        if not target:
+            return (x,y)
+        
+        # probable_action = self._find_best_single_action(ship, target)
 
-        # # Third possible sap action : the harvesting ships (around reward nodes) search enemies greedily to shoot at them
-        # already_sapped = []
-        # for ship in self.fleet.ships:
-        #     if self._is_near_relic(ship):
-        #         for xy in enemy_coordinates:
-        #             xy_tuple = tuple(xy)  # Convert to tuple for comparison
-        #             if xy_tuple not in already_sapped:
-        #                 sap_dist = max(abs(xy[0] - ship.coordinates[0]), abs(xy[1] - ship.coordinates[1]))
-        #                 if (
-        #                     sap_dist < Global.UNIT_SAP_RANGE
-        #                     and ship.energy > Global.UNIT_SAP_COST
-        #                 ):
-        #                     ship.action = ActionType.sap
-        #                     ship.sap = xy
-        #                     already_sapped.append(xy_tuple)
+        path = astar(create_weights(self.space), ship.coordinates, target)
+        energy = estimate_energy_cost(self.space, path)
+        actions = path_to_actions(path)
+        if actions and actions[0] == ActionType.center: # Louche qu'on lui dise de rester au centre
+            probable_action = self._find_best_single_action(self, ship, target)
+        elif actions and actions[0] != ActionType.center:
+            probable_action = actions[0]
+        else:
+            return (x,y)
+
+        # With the action and the current position, find the resulting position
+        if probable_action == ActionType.up:
+            probable_coordinates = (x,y-1)
+        elif probable_action == ActionType.down:
+            probable_coordinates = (x,y+1)
+        elif probable_action == ActionType.left:
+            probable_coordinates = (x-1,y)
+        elif probable_action == ActionType.right:
+            probable_coordinates = (x+1,y)
+        else:
+            probable_coordinates = (x,y)
+        # print("Preshot ", probable_coordinates, file=stderr)
+
+        return probable_coordinates
+    
+    def _get_sap_offset(self, ship):
+        return ship.sap[0] - ship.coordinates[0], ship.sap[1] - ship.coordinates[1]
 
     def _is_getting_reward(self, ship):
         for node in self.space.reward_nodes:
@@ -876,10 +826,6 @@ class Agent:
                 if ship.coordinates[0] == node.x and ship.coordinates[1] == node.y:
                     return True
         return False
-
-    def _is_near_relic(self, ship):
-        return
-        # for xy in nearby_positions(x, y, Global.UNIT_SENSOR_RANGE):
 
     def create_actions_array(self):
         ships = self.fleet.ships
@@ -893,9 +839,6 @@ class Agent:
                 actions[i] = [ship.action, sap_dx, sap_dy]
 
         return actions
-
-    def _get_sap_offset(self, ship):
-        return ship.sap[0] - ship.coordinates[0], ship.sap[1] - ship.coordinates[1]
 
     def find_relics(self):
         if Global.ALL_RELICS_FOUND:
