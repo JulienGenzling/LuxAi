@@ -53,7 +53,7 @@ class Node:
     @property
     def relic(self):
         return self._relic
-
+    
     @property
     def relic_proximity(self):
         return self._relic_proximity
@@ -83,7 +83,7 @@ class Node:
 
         self._relic = status
         self._explored_for_relic = True
-
+    
     def update_relic_proximity_status(self, status: None | bool):
         self._relic_proximity = status
 
@@ -147,7 +147,7 @@ class Space:
     @property
     def reward_nodes(self) -> set[Node]:
         return self._reward_nodes
-
+    
     def relic_proximity(self) -> set[Node]:
         return self._relic_proximity
 
@@ -290,7 +290,9 @@ class Space:
         if status:
             self._relic_nodes.add(node)
             self._relic_nodes.add(opp_node)
-            for x, y in nearby_positions(*node.coordinates, Global.RELIC_REWARD_RANGE):
+            for x, y in nearby_positions(
+                *node.coordinates, Global.RELIC_REWARD_RANGE
+            ):
                 close_node = self.get_node(x, y)
                 if close_node:
                     self._relic_proximity.add(close_node)
@@ -318,6 +320,7 @@ class Space:
                 self._relic_proximity.remove(node)
             if opp_node in self._relic_proximity:
                 self._relic_proximity.remove(opp_node)
+
 
     def _update_map(self, obs):
         sensor_mask = obs["sensor_mask"]
@@ -591,11 +594,16 @@ class Agent:
         self.fleet.update(obs, self.space)
         self.opp_fleet.update(obs, self.space)
 
+        # for ship in self.fleet:
+        #     if ship.task == None:
+                # if self.match_number == 0:
+                #     print("DE BASE NO TASK : ", self.match_number*100+self.match_step, ship.unit_id, file=stderr)
         self.find_relics()
         self.find_rewards()
         self.harvest()
-        self.sap()
+        self.sap(enemy_coordinates=obs["units"]["position"][1 - self.team_id])
         self.check()
+        
         return self.create_actions_array()
 
     def check(self):
@@ -613,6 +621,8 @@ class Agent:
                     main_targets_occupied.add(node)
                 elif node.relic_proximity:
                     secondary_targets_occupied.add(node)
+        
+        # print(match_number*100 + match_step, main_targets_occupied, file=stderr)
 
         for node in self.space:
             if node.reward and node not in main_targets_occupied:
@@ -623,15 +633,38 @@ class Agent:
         for ship in self.fleet.ships:
             if ship.energy > Global.UNIT_MOVE_COST and ship.action == None:
                 # print(match_number*100+match_step, " | ", ship.unit_id, " | ", ship.coordinates, file=stderr)
-                if ship.node in main_targets and ship.node not in main_targets_occupied:
+                if ship.node in main_targets or ship.node in main_targets_occupied:
                     # print("ALREADY ON A REWARD NODE", file=stderr)
                     ship.task = "harvest"
                     ship.target = ship.node
                     continue
-        
+                # print(
+                #     "USELESS SHIP",
+                #     " | match number : ",
+                #     match_number,
+                #     " | match step : ",
+                #     match_step,
+                #     " | unit id : ",
+                #     ship.unit_id,
+                #     " | task : ",
+                #     ship.task,
+                #     " | target : ",
+                #     ship.target,
+                #     " | coordinates : ",
+                #     ship.coordinates,
+                #     " | energy : ",
+                #     ship.energy,
+                #     file=stderr,
+                # )
+                # S'ils sont useless, ils doivent se rapprocher des rewards
+                # Trouver la case reward la plus proche
+                # Try to find a main target (reward node)
                 target, _ = find_closest_target(
                     ship.coordinates,
-                    [n.coordinates for n in main_targets],
+                    [
+                        n.coordinates
+                        for n in main_targets
+                    ],
                 )
                 # print("target found : ", target, file=stderr)
                 if target:
@@ -647,8 +680,11 @@ class Agent:
                     #     # print("ALREADY ON A SECONDARY NODE", file=stderr)
                     #     continue
                     target, _ = find_closest_target(
-                        ship.coordinates,
-                        [n.coordinates for n in secondary_targets],
+                            ship.coordinates,
+                        [
+                            n.coordinates
+                            for n in secondary_targets
+                        ],
                     )
                     if target:
                         # print("Veut aller chercher secondary target en ", target, file=stderr)
@@ -663,7 +699,7 @@ class Agent:
 
         if ship.coordinates is None:
             return
-
+        
         if x == target[0] and y == target[1]:
             return
 
@@ -685,7 +721,7 @@ class Agent:
                 return ActionType.up
             elif y < target[1]:  # target is directly below
                 return ActionType.down
-
+         
         # print(candidates, file=stderr)
         # Determine the best action among the candidates
         best_action = None
@@ -714,89 +750,36 @@ class Agent:
 
         return best_action
 
-    def sap(self):
-        """
-        Enhanced sapping strategy that aggressively targets enemy ships.
-        - Prioritizes high-value targets (enemies on reward nodes or near relics)
-        - Uses prediction for moving targets
-        - Maximizes firing range to protect our ships
-        - Coordinates multiple ships to target the same enemy when beneficial
-        - Blindly saps at reward nodes even without vision
-        - Extremely aggressive with opportunistic sapping
-        """
-        # Track which ships have been assigned to sap
-        ships_assigned_to_sap = set()
+    def sap(self, enemy_coordinates):
 
-        # Sort available ships by energy (highest first) for maximum sapping potential
-        available_ships = []
-        for ship in self.fleet:
-            # if ship.energy > Global.UNIT_SAP_COST and (
-            #     ship.action is None or ship.action == ActionType.center
-            # ):
-            if ship.energy > Global.UNIT_SAP_COST and not (ship.task == "harvest" and ship.node != ship.target):
-                available_ships.append(ship)
-
-        # Sort ships by energy to use highest-energy ships first
-        available_ships.sort(key=lambda ship: ship.energy, reverse=True)
-
-        # PHASE 1: Target visible enemies (prioritizing high-value targets)
-        if self.opp_fleet:
-            # Prioritize enemy ships on reward nodes or near relics (high-value targets)
-            prioritized_enemies = []
-            normal_enemies = []
-
-            for enemy_ship in self.opp_fleet:
-                if enemy_ship.node.reward or self._is_near_relic(enemy_ship):
-                    prioritized_enemies.append(enemy_ship)
-                else:
-                    normal_enemies.append(enemy_ship)
-
-            # Process high-value targets first, then normal targets
-            for target_list in [prioritized_enemies, normal_enemies]:
-                for enemy_ship in target_list:
-                    # Predict where the enemy will move to
-                    predicted_pos = self._preshot(enemy_ship)
-
-                    # Sort available ships by distance to target (furthest first for range advantage)
-                    ships_in_range = []
-                    for ship in available_ships:
-                        if ship.unit_id in ships_assigned_to_sap:
-                            continue
-
-                        if ship.coordinates is None:
-                            continue
-
-                        sap_dist = max(
-                            abs(predicted_pos[0] - ship.coordinates[0]),
-                            abs(predicted_pos[1] - ship.coordinates[1]),
-                        )
-
-                        if sap_dist <= Global.UNIT_SAP_RANGE:
-                            ships_in_range.append((ship, sap_dist))
-
-                    # Sort by distance (furthest first) to maximize range advantage
-                    ships_in_range.sort(key=lambda x: (-x[1], x[0].energy))
-
-                    # Determine how many ships to use based on enemy value and our resources
-                    # More aggressive approach: use more ships against high-value targets
-                    max_ships_to_use = 3 if enemy_ship.node.reward else 2
-                    ships_to_use = min(len(ships_in_range), max_ships_to_use)
-
-                    # Assign ships to sap this target
-                    for i in range(ships_to_use):
-                        if i >= len(ships_in_range):
-                            break
-
-                        ship, _ = ships_in_range[i]
-                        ship.action = ActionType.sap
-                        ship.sap = predicted_pos
-                        ships_assigned_to_sap.add(ship.unit_id)
-
-        # PHASE 2: Blind sapping at reward nodes (even without vision)
-        # This can hit enemies we don't see and disrupt their harvesting
-        if self.match_step >= 30:
-            self._blind_sap_reward_nodes(available_ships, ships_assigned_to_sap)
+        # sap enemy if we are not moving (action = center)
+        for enemy_ship in self.opp_fleet:
+            preshot_xy = self._preshot(enemy_ship)
+            for ship in self.fleet.ships:
+                sap_dist = np.inf
+                if ship.coordinates != None:
+                    sap_dist = max(
+                        abs(preshot_xy[0] - ship.coordinates[0]),
+                        abs(preshot_xy[1] - ship.coordinates[1]),
+                    )
+                # We retrieve the position of the closest ship and tell him to sap
+                if (
+                    sap_dist < Global.UNIT_SAP_RANGE
+                    and ship.energy > Global.UNIT_SAP_COST
+                    and ship.action == ActionType.center
+                ):
+                    # print("Ship : ", ship.unit_id, "Distance : ", dist, "Sap range : ", Global.UNIT_SAP_RANGE, "Sap where : ", xy, file=stderr)
+                    ship.action = ActionType.sap
+                    ship.sap = preshot_xy
     
+    def _is_near_relic(self, ship):
+        for relic_node in self.space.relic_nodes:
+            x, y = relic_node.coordinates
+            for xy in nearby_positions(x, y, Global.RELIC_REWARD_RANGE):
+                if ship.coordinates == xy:
+                    return True 
+        return False
+
     def _preshot(self, ship):
         # Si l'enemy ship est sur un reward node, on considère qu'il est immobile
         x, y = ship.coordinates
@@ -840,68 +823,14 @@ class Agent:
         # print("Preshot ", probable_coordinates, file=stderr)
 
         return probable_coordinates
-
-    def _blind_sap_reward_nodes(self, available_ships, ships_assigned_to_sap):
     
-        # Get all known reward nodes
-        reward_nodes = list(self.space.reward_nodes)
-
-        if not reward_nodes:
-            return
-
-        # Sort reward nodes by potential value (e.g., those not in our immediate vicinity)
-        # This focuses fire on likely enemy-occupied nodes
-        reward_nodes.sort(
-            key=lambda node: not is_team_sector(self.team_id, node.x, node.y)
-        )
-
-        # For each available ship not yet assigned
-        for ship in available_ships:
-            if ship.unit_id in ships_assigned_to_sap or ship.coordinates is None:
-                continue
-
-            if ship.energy <= Global.UNIT_SAP_COST:
-                continue
-
-            # Find the best reward node to blind sap at
-            for target_node in reward_nodes:
-                # Skip reward nodes we're standing on
-                if ship.coordinates == target_node.coordinates:
-                    continue
-
-                # Check if this reward node is in range
-                sap_dist = max(
-                    abs(target_node.x - ship.coordinates[0]),
-                    abs(target_node.y - ship.coordinates[1]),
-                )
-
-                if sap_dist <= Global.UNIT_SAP_RANGE:
-                    probability = 0  # Base probability
-
-                    # Much higher probability for nodes in enemy sector
-                    if not is_team_sector(self.team_id, target_node.x, target_node.y):
-                        probability += 0.5
-
-                    # Random decision with bias toward sapping
-                    if np.random.random() < probability:
-                        ship.action = ActionType.sap
-                        ship.sap = (target_node.x, target_node.y)
-                        ships_assigned_to_sap.add(ship.unit_id)
-                        break
-
     def _get_sap_offset(self, ship):
-        """Calculate the offset for sapping direction."""
         return ship.sap[0] - ship.coordinates[0], ship.sap[1] - ship.coordinates[1]
 
-    def _is_near_relic(self, ship):
-        """Check if a ship is near a relic (within reward range)."""
-        if ship.coordinates is None:
-            return False
-
-        for relic_node in self.space.relic_nodes:
-            x, y = relic_node.coordinates
-            for xy in nearby_positions(x, y, Global.RELIC_REWARD_RANGE):
-                if ship.coordinates == xy:
+    def _is_getting_reward(self, ship):
+        for node in self.space.reward_nodes:
+            if ship.coordinates != None:
+                if ship.coordinates[0] == node.x and ship.coordinates[1] == node.y:
                     return True
         return False
 
@@ -915,6 +844,9 @@ class Agent:
                 if ship.action == ActionType.sap:
                     sap_dx, sap_dy = self._get_sap_offset(ship)
                 actions[i] = [ship.action, sap_dx, sap_dy]
+            # else:
+                # if self.match_number == 0:
+                #     print("NO TASK FOUND : ", self.match_number*100+self.match_step, ship.unit_id, file=stderr)
 
         return actions
 
@@ -929,18 +861,26 @@ class Agent:
         targets = set()
         for node in self.space:
             if not node.explored_for_relic:
+                # We will only find relics in our part of the map
+                # because relics are symmetrical.
                 if is_team_sector(self.fleet.team_id, *node.coordinates):
                     targets.add(node.coordinates)
 
         def set_task(ship):
             if ship.task and ship.task != "find_relics":
+                # if self.match_number == 0:
+                #     print("OTHER TASK RELIC : ", self.match_number*100+self.match_step, ship.unit_id, file=stderr)
                 return False
 
             if ship.energy < Global.UNIT_MOVE_COST:
+                # if self.match_number == 0:
+                #     print("NO ENERGY RELIC : ", self.match_number*100+self.match_step, ship.unit_id, file=stderr)
                 return False
 
             target, _ = find_closest_target(ship.coordinates, targets)
             if not target:
+                # if self.match_number == 0:
+                #     print("NO TARGET FOUND RELIC : ", self.match_number*100+self.match_step, ship.unit_id, file=stderr)
                 return False
 
             path = astar(create_weights(self.space), ship.coordinates, target)
@@ -957,6 +897,9 @@ class Agent:
                             targets.remove(xy)
 
                 return True
+            # else:
+                # if self.match_number == 0:
+                #     print("NOT ACTION IN RELIC : ", self.match_number*100+self.match_step, ship.unit_id, file=stderr)
 
             return False
 
@@ -965,6 +908,8 @@ class Agent:
                 continue
 
             if ship.task == "find_relics":
+                # if self.match_number == 0:
+                #     print("PIPI : ", self.match_number*100+self.match_step, ship.unit_id, file=stderr)
                 ship.task = None
                 ship.target = None
 
@@ -982,6 +927,8 @@ class Agent:
         for ship in self.fleet:
             if ship.task == "find_rewards":
                 if ship.target is None:
+                    # if self.match_number == 0:
+                    #     print("CACA : ", self.match_number*100+self.match_step, ship.unit_id, file=stderr)
                     ship.task = None
                     continue
 
@@ -991,6 +938,8 @@ class Agent:
                 ):
                     relic_node_to_ship[ship.target] = ship
                 else:
+                    # if self.match_number == 0:
+                    #     print("NOT ENOUGH ENERGY TO FIND REWARD : ", self.match_number*100+self.match_step, ship.unit_id, file=stderr)
                     ship.task = None
                     ship.target = None
 
@@ -1035,6 +984,8 @@ class Agent:
                 )
 
             if not target:
+                # if self.match_number == 0:
+                #     print("NO TARGET FOUND IN REWARD : ", self.match_number*100+self.match_step, ship.unit_id, file=stderr)
                 return False
 
             path = astar(create_weights(self.space), ship.coordinates, target)
@@ -1047,7 +998,10 @@ class Agent:
                 ship.action = actions[0]
                 return True
             else:
+                # if self.match_number == 0:
+                #     print("NOT ACTION IN REWARD : ", self.match_number*100+self.match_step, ship.unit_id, file=stderr)
                 return False
+                
 
         can_pause = True
         for n, s in sorted(
@@ -1055,10 +1009,14 @@ class Agent:
         ):
             if set_task(s, n, can_pause):
                 if s.target == s.node:
+                    # If one ship is stationary, we will move all the other ships.
+                    # This will help generate more useful data in Global.REWARD_RESULTS.
                     can_pause = False
                     pass
             else:
                 if s.task == "find_rewards":
+                    # if self.match_number == 0:
+                    #     print("COULDNT SET TASK IN REWARD : ", self.match_number*100+self.match_step, ship.unit_id, file=stderr)
                     s.task = None
                     s.target = None
 
@@ -1086,6 +1044,9 @@ class Agent:
 
     def harvest(self):
 
+        # if self.match_number == 0:
+        #     print("WE ARE IN HARVEST", self.match_number*100+self.match_step, file=stderr)
+
         def set_task(ship, target_node):
             if ship.node == target_node:
                 ship.task = "harvest"
@@ -1102,6 +1063,8 @@ class Agent:
             actions = path_to_actions(path)
 
             if not actions or ship.energy < energy:
+                # if self.match_number == 0:
+                #     print("NOT ACTION IN HARVEST : ", self.match_number*100+self.match_step, ship.unit_id, actions == None, ship.energy < energy, file=stderr)
                 return False
 
             ship.task = "harvest"
@@ -1113,12 +1076,16 @@ class Agent:
         for ship in self.fleet:
             if ship.task == "harvest":
                 if ship.target is None:
+                    # if self.match_number == 0:
+                    #     print("SHOULD HARVEST BUT NO TARGET : ", self.match_number*100+self.match_step, ship.unit_id, file=stderr)
                     ship.task = None
                     continue
 
                 if set_task(ship, ship.target):
                     booked_nodes.add(ship.target)
                 else:
+                    # if self.match_number == 0:
+                    #     print("TRIED TO HARVEST BUT NO : ", self.match_number*100+self.match_step, ship.unit_id, file=stderr)
                     ship.task = None
                     ship.target = None
 
@@ -1127,17 +1094,28 @@ class Agent:
             if n.is_walkable and n not in booked_nodes:
                 targets.add(n.coordinates)
         if not targets:
+            # if self.match_number == 0:
+            #     print("HARVEST NO TARGETS WHATSOEVER", self.match_number*100+self.match_step, ship.unit_id, file=stderr)
             return
 
         for ship in self.fleet:
+            # if self.match_number == 0:
+            #     print("WTF LES REUFS : ", self.match_number*100+self.match_step, ship.unit_id, "task : ", ship.task, file=stderr)
             if ship.task:
+                # if self.match_number == 0:
+                #     print("HARVEST, NO TASK YET : ", self.match_number*100+self.match_step, ship.unit_id, "task : ", ship.task, file=stderr)
                 continue
+
+            # if self.match_number == 0:
+            #     print("HARVEST, NO TASK YET : ", self.match_number*100+self.match_step, ship.unit_id, file=stderr)
 
             target, _ = find_closest_target(ship.coordinates, targets)
 
             if target and set_task(ship, self.space.get_node(*target)):
                 targets.remove(target)
             else:
+                # if self.match_number == 0:
+                #     print("AFTER HARVEST NO TASK : ", target, self.match_number*100+self.match_step, ship.unit_id, file=stderr)
                 ship.task = None
                 ship.target = None
 
