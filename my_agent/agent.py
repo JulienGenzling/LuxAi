@@ -567,7 +567,7 @@ class Fleet:
                         nebula_reduction = expected_energy - ship.energy
                         
                         # Only record if reduction is positive (to avoid confusing with other energy changes)
-                        if nebula_reduction > 0:
+                        if nebula_reduction in [0, 1, 2, 3, 5, 25]:
                             Global.NEBULA_ENERGY_OBSERVATIONS.append(nebula_reduction)
                             
                             # Update the estimate once we have enough observations
@@ -606,7 +606,6 @@ class Agent:
         self.match_step = None
 
     def act(self, step: int, obs, remainingOverageTime: int = 60):
-        print(Global.NEBULA_ENERGY_REDUCTION, file=stderr)
         self.match_step = get_match_step(step)
         self.match_number = get_match_number(step)
 
