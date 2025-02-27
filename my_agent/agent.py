@@ -632,6 +632,8 @@ class Agent:
         self.find_relics()
         self.find_rewards()
         self.harvest()
+        # sap only if there are relics on the space
+
         self.sap()
         self.check()
         return self.create_actions_array()
@@ -773,7 +775,9 @@ class Agent:
             # ):
             # if ship.energy > Global.UNIT_SAP_COST and not (ship.task == "harvest" and ship.node != ship.target):
             #     available_ships.append(ship)
-            if ship.energy > Global.UNIT_SAP_COST and (ship.task == "harvest" and ship.node == ship.target):
+            # if ship.energy > Global.UNIT_SAP_COST and (ship.task == "harvest" and ship.node == ship.target):
+            #     available_ships.append(ship)
+            if ship.energy > Global.UNIT_SAP_COST:
                 available_ships.append(ship)
 
         # Sort ships by energy to use highest-energy ships first
@@ -792,7 +796,7 @@ class Agent:
                     normal_enemies.append(enemy_ship)
 
             # Process high-value targets first, then normal targets
-            for target_list in [prioritized_enemies, normal_enemies]:
+            for i, target_list in enumerate([prioritized_enemies, normal_enemies]):
                 for enemy_ship in target_list:
                     # Predict where the enemy will move to
                     predicted_pos = self._preshot(enemy_ship)
@@ -817,9 +821,15 @@ class Agent:
                     # Sort by distance (furthest first) to maximize range advantage
                     ships_in_range.sort(key=lambda x: (-x[1], x[0].energy))
 
+                    if i == 1 and len(ships_in_range) < 2: # normal enemy ship and not many ships in range
+                        continue
                     # Determine how many ships to use based on enemy value and our resources
                     # More aggressive approach: use more ships against high-value targets
-                    max_ships_to_use = 3 if enemy_ship.node.reward else 2
+                    if i == 0:
+                        max_ships_to_use = 3 if enemy_ship.node.reward else 2
+                    else:
+                        max_ships_to_use = 2 if enemy_ship.node.reward else 1
+                    
                     ships_to_use = min(len(ships_in_range), max_ships_to_use)
 
                     # Assign ships to sap this target
