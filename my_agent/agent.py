@@ -1015,9 +1015,10 @@ class Agent:
         if not invisible_reward_nodes:
             return
 
-        invisible_reward_nodes.sort(
-            key=lambda node: not is_team_sector(self.team_id, node.x, node.y)
-        )
+        invisible_reward_nodes = list(filter(
+            lambda node: not is_team_sector(self.team_id, node.x, node.y),
+            invisible_reward_nodes
+        ))
 
         for ship in list(available_ships):
             if (ship.coordinates is None
@@ -1068,7 +1069,11 @@ class Agent:
         return actions
 
     def find_relics(self):
+        self.all_relic_found_count = 0
         if Global.ALL_RELICS_FOUND:
+            self.all_relic_found_count += 1
+            if self.all_relic_found_count == 1:
+                print(self.match_number*101+self.match_step+1, ' ALL RELIC FOUND', file=stderr)
             for ship in self.fleet:
                 if ship.task == "find_relics":
                     ship.task = None
@@ -1118,7 +1123,11 @@ class Agent:
                 ship.target = None
 
     def find_rewards(self):
+        self.all_reward_found_count = 0
         if Global.ALL_REWARDS_FOUND:
+            self.all_reward_found_count += 1
+            if self.all_reward_found_count == 1:
+                print(self.match_number*101+self.match_step+1, ' ALL REWARD FOUND', file=stderr)
             for ship in self.fleet:
                 if ship.task == "find_rewards":
                     ship.task = None
