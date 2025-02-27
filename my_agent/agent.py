@@ -533,8 +533,12 @@ class Fleet:
         """
         Modified Fleet.update method to detect nebula energy reduction
         """
-        previous_ship_states = {ship.unit_id: (ship.node, ship.energy) for ship in self.ships if ship.node is not None}
-        
+        previous_ship_states = {
+            ship.unit_id: (ship.node, ship.energy)
+            for ship in self.ships
+            if ship.node is not None
+        }
+
         # Update points from observation
         self.points = int(obs["team_points"][self.team_id])
 
@@ -548,35 +552,38 @@ class Fleet:
             if active:
                 previous_state = previous_ship_states.get(ship.unit_id)
                 new_node = space.get_node(*position)
-                
+
                 # Store the new state
                 ship.node = new_node
                 ship.energy = int(energy)
                 ship.action = None
-                
+
                 # Analyze energy reduction if we have previous state
                 if previous_state and ship.node != previous_state[0]:
                     prev_node, prev_energy = previous_state
-                    
+
                     # Check if the ship moved to a nebula tile
                     if ship.node.type == NodeType.nebula:
                         # Calculate expected energy after movement
-                        expected_energy = prev_energy - Global.UNIT_MOVE_COST + ship.node.energy
-                        
+                        expected_energy = (
+                            prev_energy - Global.UNIT_MOVE_COST + ship.node.energy
+                        )
+
                         # Calculate actual nebula reduction
                         nebula_reduction = expected_energy - ship.energy
-                        
+
                         # Only record if reduction is positive (to avoid confusing with other energy changes)
                         if nebula_reduction in [0, 1, 2, 3, 5, 25]:
                             Global.NEBULA_ENERGY_OBSERVATIONS.append(nebula_reduction)
-                            
+
                             # Update the estimate once we have enough observations
                             if len(Global.NEBULA_ENERGY_OBSERVATIONS) >= 3:
                                 # Use the most common value observed
                                 from collections import Counter
+
                                 counter = Counter(Global.NEBULA_ENERGY_OBSERVATIONS)
                                 most_common = counter.most_common(1)[0][0]
-                                
+
                                 # Only update if we're confident
                                 if counter[most_common] >= 2:
                                     Global.NEBULA_ENERGY_REDUCTION = most_common
@@ -668,7 +675,7 @@ class Agent:
                     ship.task = "harvest"
                     ship.target = ship.node
                     continue
-        
+
                 target, _ = find_closest_target(
                     ship.coordinates,
                     [n.coordinates for n in main_targets],
@@ -755,35 +762,165 @@ class Agent:
         return best_action
 
     def sap(self):
-        """
-        Enhanced sapping strategy that aggressively targets enemy ships.
-        - Prioritizes high-value targets (enemies on reward nodes or near relics)
-        - Uses prediction for moving targets
-        - Maximizes firing range to protect our ships
-        - Coordinates multiple ships to target the same enemy when beneficial
-        - Blindly saps at reward nodes even without vision
-        - Extremely aggressive with opportunistic sapping
-        """
-        # Track which ships have been assigned to sap
-        ships_assigned_to_sap = set()
 
-        # Sort available ships by energy (highest first) for maximum sapping potential
-        available_ships = []
+        # Initial available ships
+        available_ships = set()
         for ship in self.fleet:
-            # if ship.energy > Global.UNIT_SAP_COST and (
-            #     ship.action is None or ship.action == ActionType.center
-            # ):
-            if ship.energy > Global.UNIT_SAP_COST and not (ship.task == "harvest" and ship.node != ship.target):
-                available_ships.append(ship)
-            # if ship.energy > Global.UNIT_SAP_COST and (ship.task == "harvest" and ship.node == ship.target):
-            #     available_ships.append(ship)
+            if ship.energy > Global.UNIT_SAP_COST and not (
+                ship.task == "harvest" and ship.node != ship.target
+            ):
+                available_ships.add(ship)
 
-        # Sort ships by energy to use highest-energy ships first
-        available_ships.sort(key=lambda ship: ship.energy, reverse=True)
+        self.sap_1(available_ships) # Sap greedily adjacent enemy ships
+        if available_ships:
+            self.sap_2(available_ships) # Sap other ships
+        if available_ships and self.match_step >= 30:
+            self.sap_3(available_ships) # Blind sap on enemy reward nodes
+    
+    def sap_1(self, available_ships):
+        # Find all enemy ship positions
+        enemy_positions = [(enemy.coordinates[0], enemy.coordinates[1]) for enemy in self.opp_fleet]
+        
+        # Find clusters of enemies (ships that are adjacent to each other)
+        clusters = self._find_enemy_clusters(enemy_positions)
+        
+        # For each cluster, calculate best sap position
+        for cluster in clusters:
+            if len(cluster) < 2:  # Only care about clusters of 2+ ships
+                continue
+                
+            # Calculate the optimal sap position for this cluster
+            best_pos, damage_score = self._calculate_optimal_sap_position(cluster)
+            
+            if best_pos and damage_score > 1.0:  # Only worth it if we can hit more than one ship effectively
+                # Find ships that can hit this position
+                ships_in_range = []
+                for ship in list(available_ships):
+                    if ship.coordinates is None:
+                        continue
+                        
+                    sap_dist = max(
+                        abs(best_pos[0] - ship.coordinates[0]),
+                        abs(best_pos[1] - ship.coordinates[1]),
+                    )
+                    
+                    if sap_dist <= Global.UNIT_SAP_RANGE:
+                        ships_in_range.append((ship, sap_dist))
+                
+                # Sort by distance (furthest first) to maximize range advantage
+                ships_in_range.sort(key=lambda x: (-x[1], x[0].energy))
+                
+                # Use 1-2 ships depending on cluster size and damage potential
+                ships_to_use = min(len(ships_in_range), 1 + (damage_score > 1.5))
+                
+                # Assign ships to sap this target
+                for i in range(ships_to_use):
+                    if i >= len(ships_in_range):
+                        break
+                    
+                    ship, _ = ships_in_range[i]
+                    ship.action = ActionType.sap
+                    ship.sap = best_pos
+                    available_ships.remove(ship)
+    
+    def _find_enemy_clusters(self, enemy_positions):
+        clusters = []
+        visited = set()
+        
+        def get_neighbors(pos):
+            x, y = pos
+            neighbors = []
+            for dx, dy in [(0, 1), (1, 0), (0, -1), (-1, 0)]:
+                nx, ny = warp_point(x + dx, y + dy)
+                neighbor_pos = (nx, ny)
+                if neighbor_pos in enemy_positions:
+                    neighbors.append(neighbor_pos)
+            return neighbors
+        
+        def dfs(pos, current_cluster):
+            visited.add(pos)
+            current_cluster.append(pos)
+            
+            for neighbor in get_neighbors(pos):
+                if neighbor not in visited:
+                    dfs(neighbor, current_cluster)
+        
+        # Find all connected groups of enemy ships
+        for pos in enemy_positions:
+            if pos not in visited:
+                current_cluster = []
+                dfs(pos, current_cluster)
+                clusters.append(current_cluster)
+        
+        return clusters
 
-        # PHASE 1: Target visible enemies (prioritizing high-value targets)
+    def _calculate_optimal_sap_position(self, cluster):
+        # Get all potential sap positions (all positions within UNIT_SAP_RANGE of any ship we have)
+        potential_positions = set()
+        
+        # Get predicted positions for each enemy in the cluster
+        predicted_positions = []
+        for pos in cluster:
+            # Find the enemy ship at this position
+            enemy_ship = None
+            for ship in self.opp_fleet:
+                if ship.coordinates == pos:
+                    enemy_ship = ship
+                    break
+            
+            if enemy_ship:
+                # Get the predicted position
+                preshot_pos = self._preshot(enemy_ship)
+                if preshot_pos:
+                    predicted_positions.append(preshot_pos)
+                else:
+                    # If no prediction is available, use current position
+                    predicted_positions.append(pos)
+            else:
+                # Fallback to current position if ship not found
+                predicted_positions.append(pos)
+        
+        # Consider all positions in and around the predicted positions
+        for pos in predicted_positions:
+            x, y = pos
+            # Center position
+            potential_positions.add((x, y))
+            
+            # Adjacent positions
+            for dx in range(-1, 2):
+                for dy in range(-1, 2):
+                    nx, ny = warp_point(x + dx, y + dy)
+                    potential_positions.add((nx, ny))
+        
+        best_position = None
+        best_score = 0
+        
+        # For each potential position, calculate the damage score using predicted positions
+        for pos in potential_positions:
+            score = 0
+            for enemy_pos in predicted_positions:
+                # Calculate Manhattan distance to determine splash damage
+                dist = max(
+                    abs(pos[0] - enemy_pos[0]),
+                    abs(pos[1] - enemy_pos[1]),
+                )
+                
+                # Direct hit
+                if dist == 0:
+                    score += 1.0
+                # Splash damage (only if within 1 tile)
+                elif dist == 1:
+                    score += Global.UNIT_SAP_DROPOFF_FACTOR
+            
+            if score > best_score:
+                best_score = score
+                best_position = pos
+        
+        return best_position, best_score
+
+    def sap_2(self, available_ships):
+
         if self.opp_fleet:
-            # Prioritize enemy ships on reward nodes or near relics (high-value targets)
             prioritized_enemies = []
             normal_enemies = []
 
@@ -798,53 +935,49 @@ class Agent:
                 for enemy_ship in target_list:
                     # Predict where the enemy will move to
                     predicted_pos = self._preshot(enemy_ship)
+                    if predicted_pos:  # there is a preshot
 
-                    # Sort available ships by distance to target (furthest first for range advantage)
-                    ships_in_range = []
-                    for ship in available_ships:
-                        if ship.unit_id in ships_assigned_to_sap:
+                        # Sort available ships by distance to target (furthest first for range advantage)
+                        ships_in_range = []
+                        for ship in list(available_ships):
+                            if ship.coordinates is None:
+                                continue
+
+                            sap_dist = max(
+                                abs(predicted_pos[0] - ship.coordinates[0]),
+                                abs(predicted_pos[1] - ship.coordinates[1]),
+                            )
+
+                            if sap_dist <= Global.UNIT_SAP_RANGE:
+                                ships_in_range.append((ship, sap_dist))
+
+                        # Sort by distance (furthest first) to maximize range advantage
+                        ships_in_range.sort(key=lambda x: (-x[1], x[0].energy))
+
+                        if (
+                            i == 1 and len(ships_in_range) < 2
+                        ):  # normal enemy ship and not many ships in range
                             continue
+                        # Determine how many ships to use based on enemy value and our resources
+                        # More aggressive approach: use more ships against high-value targets
+                        if i == 0:
+                            max_ships_to_use = 3 if enemy_ship.node.reward else 2
+                        else:
+                            max_ships_to_use = 2 if enemy_ship.node.reward else 1
 
-                        if ship.coordinates is None:
-                            continue
+                        ships_to_use = min(len(ships_in_range), max_ships_to_use)
 
-                        sap_dist = max(
-                            abs(predicted_pos[0] - ship.coordinates[0]),
-                            abs(predicted_pos[1] - ship.coordinates[1]),
-                        )
+                        # Assign ships to sap this target
+                        for i in range(ships_to_use):
+                            if i >= len(ships_in_range):
+                                break
 
-                        if sap_dist <= Global.UNIT_SAP_RANGE:
-                            ships_in_range.append((ship, sap_dist))
+                            ship, _ = ships_in_range[i]
+                            ship.action = ActionType.sap
+                            ship.sap = predicted_pos
+                            available_ships.remove(ship)
 
-                    # Sort by distance (furthest first) to maximize range advantage
-                    ships_in_range.sort(key=lambda x: (-x[1], x[0].energy))
 
-                    if i == 1 and len(ships_in_range) < 2: # normal enemy ship and not many ships in range
-                        continue
-                    # Determine how many ships to use based on enemy value and our resources
-                    # More aggressive approach: use more ships against high-value targets
-                    if i == 0:
-                        max_ships_to_use = 3 if enemy_ship.node.reward else 2
-                    else:
-                        max_ships_to_use = 2 if enemy_ship.node.reward else 1
-                    
-                    ships_to_use = min(len(ships_in_range), max_ships_to_use)
-
-                    # Assign ships to sap this target
-                    for i in range(ships_to_use):
-                        if i >= len(ships_in_range):
-                            break
-
-                        ship, _ = ships_in_range[i]
-                        ship.action = ActionType.sap
-                        ship.sap = predicted_pos
-                        ships_assigned_to_sap.add(ship.unit_id)
-
-        # PHASE 2: Blind sapping at reward nodes (even without vision)
-        # This can hit enemies we don't see and disrupt their harvesting
-        if self.match_step >= 30:
-            self._blind_sap_reward_nodes(available_ships, ships_assigned_to_sap)
-    
     def _preshot(self, ship):
         # Si l'enemy ship est sur un reward node, on considère qu'il est immobile
         x, y = ship.coordinates
@@ -852,90 +985,58 @@ class Agent:
             # print("Preshot ",  (x,y), file=stderr)
             return ship.coordinates
 
+        # Si l'ennemi est sur un asteroide, ne pas lui tirer dessus
+        if ship.node.type == NodeType.asteroid:
+            return None
+
         target, _ = find_closest_target(
-                    ship.coordinates,
-                    [
-                        n.coordinates
-                        for n in self.space.reward_nodes
-                    ],
-                )
+            ship.coordinates,
+            [n.coordinates for n in self.space.reward_nodes],
+        )
         if not target:
-            return (x,y)
-        
-        # probable_action = self._find_best_single_action(ship, target)
+            return None
 
         path = astar(create_weights(self.space), ship.coordinates, target)
-        energy = estimate_energy_cost(self.space, path)
-        actions = path_to_actions(path)
-        if actions and actions[0] == ActionType.center: # Louche qu'on lui dise de rester au centre
-            probable_action = self._find_best_single_action(self, ship, target)
-        elif actions and actions[0] != ActionType.center:
-            probable_action = actions[0]
+        if not path:
+            return None
         else:
-            return (x,y)
-
-        # With the action and the current position, find the resulting position
-        if probable_action == ActionType.up:
-            probable_coordinates = (x,y-1)
-        elif probable_action == ActionType.down:
-            probable_coordinates = (x,y+1)
-        elif probable_action == ActionType.left:
-            probable_coordinates = (x-1,y)
-        elif probable_action == ActionType.right:
-            probable_coordinates = (x+1,y)
-        else:
-            probable_coordinates = (x,y)
-        # print("Preshot ", probable_coordinates, file=stderr)
+            probable_coordinates = path[1]
 
         return probable_coordinates
 
-    def _blind_sap_reward_nodes(self, available_ships, ships_assigned_to_sap):
-    
-        # Get all known reward nodes
+    def sap_3(self, available_ships):
         reward_nodes = list(self.space.reward_nodes)
 
         if not reward_nodes:
             return
 
-        # Sort reward nodes by potential value (e.g., those not in our immediate vicinity)
-        # This focuses fire on likely enemy-occupied nodes
-        reward_nodes.sort(
+        invisible_reward_nodes = [node for node in reward_nodes if not node.is_visible]
+
+        if not invisible_reward_nodes:
+            return
+
+        invisible_reward_nodes.sort(
             key=lambda node: not is_team_sector(self.team_id, node.x, node.y)
         )
 
-        # For each available ship not yet assigned
-        for ship in available_ships:
-            if ship.unit_id in ships_assigned_to_sap or ship.coordinates is None:
+        for ship in list(available_ships):
+            if (ship.coordinates is None
+                or ship.energy <= Global.UNIT_SAP_COST
+            ):
                 continue
 
-            if ship.energy <= Global.UNIT_SAP_COST:
-                continue
+            for target_node in invisible_reward_nodes:
 
-            # Find the best reward node to blind sap at
-            for target_node in reward_nodes:
-                # Skip reward nodes we're standing on
-                if ship.coordinates == target_node.coordinates:
-                    continue
-
-                # Check if this reward node is in range
                 sap_dist = max(
                     abs(target_node.x - ship.coordinates[0]),
                     abs(target_node.y - ship.coordinates[1]),
                 )
 
-                if sap_dist <= Global.UNIT_SAP_RANGE:
-                    probability = 0  # Base probability
-
-                    # Much higher probability for nodes in enemy sector
-                    if not is_team_sector(self.team_id, target_node.x, target_node.y):
-                        probability += 0.5
-
-                    # Random decision with bias toward sapping
-                    if np.random.random() < probability:
-                        ship.action = ActionType.sap
-                        ship.sap = (target_node.x, target_node.y)
-                        ships_assigned_to_sap.add(ship.unit_id)
-                        break
+                if sap_dist <= Global.UNIT_SAP_RANGE and np.random.random() < 0.5:
+                    ship.action = ActionType.sap
+                    ship.sap = (target_node.x, target_node.y)
+                    available_ships.remove(ship)
+                    break
 
     def _get_sap_offset(self, ship):
         """Calculate the offset for sapping direction."""
