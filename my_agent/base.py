@@ -48,6 +48,7 @@ class Global:
     # - `False`: The sensors did not detect any changes.
     # This information will be used to determine the speed and direction of obstacle movement.
     OBSTACLES_MOVEMENT_STATUS = []
+    NEBULA_ENERGY_OBSERVATIONS = []
 
     # Others:
 

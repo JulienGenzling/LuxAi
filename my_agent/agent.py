@@ -530,8 +530,15 @@ class Fleet:
             ship.clean()
 
     def update(self, obs, space: Space):
+        """
+        Modified Fleet.update method to detect nebula energy reduction
+        """
+        previous_ship_states = {ship.unit_id: (ship.node, ship.energy) for ship in self.ships if ship.node is not None}
+        
+        # Update points from observation
         self.points = int(obs["team_points"][self.team_id])
 
+        # Update ships with new positions and energy values
         for ship, active, position, energy in zip(
             self.ships,
             obs["units_mask"][self.team_id],
@@ -539,9 +546,43 @@ class Fleet:
             obs["units"]["energy"][self.team_id],
         ):
             if active:
-                ship.node = space.get_node(*position)
+                previous_state = previous_ship_states.get(ship.unit_id)
+                new_node = space.get_node(*position)
+                
+                # Store the new state
+                ship.node = new_node
                 ship.energy = int(energy)
                 ship.action = None
+                
+                # Analyze energy reduction if we have previous state
+                if previous_state and ship.node != previous_state[0]:
+                    prev_node, prev_energy = previous_state
+                    
+                    # Check if the ship moved to a nebula tile
+                    if ship.node.type == NodeType.nebula:
+                        # Calculate expected energy after movement
+                        expected_energy = prev_energy - Global.UNIT_MOVE_COST
+                        
+                        # Calculate actual nebula reduction
+                        nebula_reduction = expected_energy - ship.energy
+                        
+                        # Only record if reduction is positive (to avoid confusing with other energy changes)
+                        if nebula_reduction > 0:
+                            if not hasattr(Global, 'NEBULA_ENERGY_OBSERVATIONS'):
+                                Global.NEBULA_ENERGY_OBSERVATIONS = []
+                                
+                            Global.NEBULA_ENERGY_OBSERVATIONS.append(nebula_reduction)
+                            
+                            # Update the estimate once we have enough observations
+                            if len(Global.NEBULA_ENERGY_OBSERVATIONS) >= 3:
+                                # Use the most common value observed
+                                from collections import Counter
+                                counter = Counter(Global.NEBULA_ENERGY_OBSERVATIONS)
+                                most_common = counter.most_common(1)[0][0]
+                                
+                                # Only update if we're confident
+                                if counter[most_common] >= 2:
+                                    Global.NEBULA_ENERGY_REDUCTION = most_common
             else:
                 ship.clean()
 
@@ -568,6 +609,7 @@ class Agent:
         self.match_step = None
 
     def act(self, step: int, obs, remainingOverageTime: int = 60):
+        print(Global.NEBULA_ENERGY_REDUCTION, file=stderr)
         self.match_step = get_match_step(step)
         self.match_number = get_match_number(step)
 
