@@ -561,16 +561,13 @@ class Fleet:
                     # Check if the ship moved to a nebula tile
                     if ship.node.type == NodeType.nebula:
                         # Calculate expected energy after movement
-                        expected_energy = prev_energy - Global.UNIT_MOVE_COST
+                        expected_energy = prev_energy - Global.UNIT_MOVE_COST + ship.node.energy
                         
                         # Calculate actual nebula reduction
                         nebula_reduction = expected_energy - ship.energy
                         
                         # Only record if reduction is positive (to avoid confusing with other energy changes)
                         if nebula_reduction > 0:
-                            if not hasattr(Global, 'NEBULA_ENERGY_OBSERVATIONS'):
-                                Global.NEBULA_ENERGY_OBSERVATIONS = []
-                                
                             Global.NEBULA_ENERGY_OBSERVATIONS.append(nebula_reduction)
                             
                             # Update the estimate once we have enough observations
