@@ -733,7 +733,9 @@ class Agent:
             # if ship.energy > Global.UNIT_SAP_COST and (
             #     ship.action is None or ship.action == ActionType.center
             # ):
-            if ship.energy > Global.UNIT_SAP_COST and not (ship.task == "harvest" and ship.node != ship.target):
+            # if ship.energy > Global.UNIT_SAP_COST and not (ship.task == "harvest" and ship.node != ship.target):
+            #     available_ships.append(ship)
+            if ship.energy > Global.UNIT_SAP_COST and (ship.task == "harvest" and ship.node == ship.target):
                 available_ships.append(ship)
 
         # Sort ships by energy to use highest-energy ships first
