@@ -643,7 +643,7 @@ class Agent:
         self.sap()
         self.check()
         return self.create_actions_array()
-    
+
     def gather_energy(self):
         """
         Make ships gather energy before venturing into enemy territory.
@@ -653,70 +653,97 @@ class Agent:
         """
         # Minimum energy threshold before venturing deep into enemy territory
         MIN_ENERGY_THRESHOLD = 150
-        
+
         for ship in self.fleet:
             # Skip ships that are not targeting harvest or have no coordinates
-            if ship.task != "harvest" or ship.coordinates is None or ship.target is None:
+            if (
+                ship.task != "harvest"
+                or ship.coordinates is None
+                or ship.target is None
+            ):
                 continue
-                
+
             # Check if the ship is targeting an enemy reward node
-            target_in_enemy_territory = not is_team_sector(self.team_id, *ship.target.coordinates)
-            
+            target_in_enemy_territory = not is_team_sector(
+                self.team_id, *ship.target.coordinates
+            )
+
             # Check if the ship is already in enemy territory
-            ship_in_enemy_territory = not is_team_sector(self.team_id, *ship.coordinates)
-            
+            ship_in_enemy_territory = not is_team_sector(
+                self.team_id, *ship.coordinates
+            )
+
             # Only apply this strategy if ship is in enemy territory and targeting enemy reward
-            if ship_in_enemy_territory and target_in_enemy_territory and ship.energy < MIN_ENERGY_THRESHOLD:
+            if (
+                ship_in_enemy_territory
+                and target_in_enemy_territory
+                and ship.energy < MIN_ENERGY_THRESHOLD
+            ):
                 # Look for high energy spots that are:
                 # 1. Close to the ship's current position
                 # 2. Within sap range of the target reward node
                 # 3. Preferably in a safer position
-                
+
                 best_energy_spot = None
                 best_energy_value = 0
-                max_search_radius = 5  # Limit search radius to avoid excessive computation
-                
+                max_search_radius = (
+                    5  # Limit search radius to avoid excessive computation
+                )
+
                 # Search for energy nodes around current position
                 for x_offset in range(-max_search_radius, max_search_radius + 1):
                     for y_offset in range(-max_search_radius, max_search_radius + 1):
                         # Skip if search radius is too large (Manhattan distance)
                         if abs(x_offset) + abs(y_offset) > max_search_radius:
                             continue
-                            
+
                         # Calculate potential energy node position
-                        pot_x, pot_y = warp_point(ship.coordinates[0] + x_offset, ship.coordinates[1] + y_offset)
+                        pot_x, pot_y = warp_point(
+                            ship.coordinates[0] + x_offset,
+                            ship.coordinates[1] + y_offset,
+                        )
                         pot_node = self.space.get_node(pot_x, pot_y)
-                        
+
                         # Skip if the node is not walkable or has no energy
-                        if (not pot_node.is_walkable or pot_node.energy is None or 
-                            pot_node.energy <= 0):
+                        if (
+                            not pot_node.is_walkable
+                            or pot_node.energy is None
+                            or pot_node.energy <= 0
+                        ):
                             continue
-                        
+
                         # Check if within sap range of the target
                         target_dist = max(
                             abs(pot_x - ship.target.coordinates[0]),
-                            abs(pot_y - ship.target.coordinates[1])
+                            abs(pot_y - ship.target.coordinates[1]),
                         )
-                        
+
                         # Must be within sap range and have decent energy
-                        if target_dist <= Global.UNIT_SAP_RANGE and pot_node.energy > best_energy_value:
+                        if (
+                            target_dist <= Global.UNIT_SAP_RANGE
+                            and pot_node.energy > best_energy_value
+                        ):
                             # Prefer spots in our territory if possible
-                            safety_bonus = 5 if is_team_sector(self.team_id, pot_x, pot_y) else 0
-                            
+                            safety_bonus = (
+                                5 if is_team_sector(self.team_id, pot_x, pot_y) else 0
+                            )
+
                             # Calculate total value considering energy and safety
                             total_value = pot_node.energy + safety_bonus
-                            
+
                             if total_value > best_energy_value:
                                 best_energy_value = total_value
                                 best_energy_spot = (pot_x, pot_y)
-                
+
                 # If we found a good energy spot, reroute the ship
                 if best_energy_spot:
                     energy_node = self.space.get_node(*best_energy_spot)
-                    
+
                     # Calculate path to energy spot
-                    path = astar(create_weights(self.space), ship.coordinates, best_energy_spot)
-                    
+                    path = astar(
+                        create_weights(self.space), ship.coordinates, best_energy_spot
+                    )
+
                     if path:
                         # Change the ship's immediate task to gather energy
                         actions = path_to_actions(path)
@@ -724,8 +751,7 @@ class Agent:
                             ship.action = actions[0]
                             # Temporarily change task but keep the original target
                             ship.task = "gather_energy"
-                            print("GATHERING ", self.match_number*101+1+self.match_step, ship.unit_id, file=stderr)
-                            
+                            # print("GATHERING ", self.match_number*101+1+self.match_step, ship.unit_id, file=stderr)
 
     def check(self):
         main_targets = set()  # reward nodes
@@ -855,60 +881,64 @@ class Agent:
 
         self.sap_1(available_ships)
         if available_ships:
-            self.sap_2(available_ships) # Sap other ships
+            self.sap_2(available_ships)  # Sap other ships
         if available_ships and self.match_step >= 30:
-            self.sap_3(available_ships) # Blind sap on enemy reward nodes
-    
+            self.sap_3(available_ships)  # Blind sap on enemy reward nodes
+
     def sap_1(self, available_ships):
         # Find all enemy ship positions
-        enemy_positions = [(enemy.coordinates[0], enemy.coordinates[1]) for enemy in self.opp_fleet]
-        
+        enemy_positions = [
+            (enemy.coordinates[0], enemy.coordinates[1]) for enemy in self.opp_fleet
+        ]
+
         # Find clusters of enemies (ships that are adjacent to each other)
         clusters = self._find_enemy_clusters(enemy_positions)
-        
+
         # For each cluster, calculate best sap position
         for cluster in clusters:
             if len(cluster) < 2:  # Only care about clusters of 2+ ships
                 continue
-                
+
             # Calculate the optimal sap position for this cluster
             best_pos, damage_score = self._calculate_optimal_sap_position(cluster)
-            
-            if best_pos and damage_score > 1.0:  # Only worth it if we can hit more than one ship effectively
+
+            if (
+                best_pos and damage_score > 1.0
+            ):  # Only worth it if we can hit more than one ship effectively
                 # Find ships that can hit this position
                 ships_in_range = []
                 for ship in list(available_ships):
                     if ship.coordinates is None:
                         continue
-                        
+
                     sap_dist = max(
                         abs(best_pos[0] - ship.coordinates[0]),
                         abs(best_pos[1] - ship.coordinates[1]),
                     )
-                    
+
                     if sap_dist <= Global.UNIT_SAP_RANGE:
                         ships_in_range.append((ship, sap_dist))
-                
+
                 # Sort by distance (furthest first) to maximize range advantage
                 ships_in_range.sort(key=lambda x: (-x[1], x[0].energy))
-                
+
                 # Use 1-2 ships depending on cluster size and damage potential
                 ships_to_use = min(len(ships_in_range), 1 + (damage_score > 1.5))
-                
+
                 # Assign ships to sap this target
                 for i in range(ships_to_use):
                     if i >= len(ships_in_range):
                         break
-                    
+
                     ship, _ = ships_in_range[i]
                     ship.action = ActionType.sap
                     ship.sap = best_pos
                     available_ships.remove(ship)
-    
+
     def _find_enemy_clusters(self, enemy_positions):
         clusters = []
         visited = set()
-        
+
         def get_neighbors(pos):
             x, y = pos
             neighbors = []
@@ -918,28 +948,28 @@ class Agent:
                 if neighbor_pos in enemy_positions:
                     neighbors.append(neighbor_pos)
             return neighbors
-        
+
         def dfs(pos, current_cluster):
             visited.add(pos)
             current_cluster.append(pos)
-            
+
             for neighbor in get_neighbors(pos):
                 if neighbor not in visited:
                     dfs(neighbor, current_cluster)
-        
+
         # Find all connected groups of enemy ships
         for pos in enemy_positions:
             if pos not in visited:
                 current_cluster = []
                 dfs(pos, current_cluster)
                 clusters.append(current_cluster)
-        
+
         return clusters
 
     def _calculate_optimal_sap_position(self, cluster):
         # Get all potential sap positions (all positions within UNIT_SAP_RANGE of any ship we have)
         potential_positions = set()
-        
+
         # Get predicted positions for each enemy in the cluster
         predicted_positions = []
         for pos in cluster:
@@ -949,7 +979,7 @@ class Agent:
                 if ship.coordinates == pos:
                     enemy_ship = ship
                     break
-            
+
             if enemy_ship:
                 # Get the predicted position
                 preshot_pos = self._preshot(enemy_ship)
@@ -961,22 +991,22 @@ class Agent:
             else:
                 # Fallback to current position if ship not found
                 predicted_positions.append(pos)
-        
+
         # Consider all positions in and around the predicted positions
         for pos in predicted_positions:
             x, y = pos
             # Center position
             potential_positions.add((x, y))
-            
+
             # Adjacent positions
             for dx in range(-1, 2):
                 for dy in range(-1, 2):
                     nx, ny = warp_point(x + dx, y + dy)
                     potential_positions.add((nx, ny))
-        
+
         best_position = None
         best_score = 0
-        
+
         # For each potential position, calculate the damage score using predicted positions
         for pos in potential_positions:
             score = 0
@@ -986,18 +1016,18 @@ class Agent:
                     abs(pos[0] - enemy_pos[0]),
                     abs(pos[1] - enemy_pos[1]),
                 )
-                
+
                 # Direct hit
                 if dist == 0:
                     score += 1.0
                 # Splash damage (only if within 1 tile)
                 elif dist == 1:
                     score += Global.UNIT_SAP_DROPOFF_FACTOR
-            
+
             if score > best_score:
                 best_score = score
                 best_position = pos
-        
+
         return best_position, best_score
 
     def sap_2(self, available_ships):
@@ -1059,7 +1089,6 @@ class Agent:
                             ship.sap = predicted_pos
                             available_ships.remove(ship)
 
-
     def _preshot(self, ship):
         # Si l'enemy ship est sur un reward node, on considère qu'il est immobile
         x, y = ship.coordinates
@@ -1097,15 +1126,15 @@ class Agent:
         if not invisible_reward_nodes:
             return
 
-        invisible_reward_nodes = list(filter(
-            lambda node: not is_team_sector(self.team_id, node.x, node.y),
-            invisible_reward_nodes
-        ))
+        invisible_reward_nodes = list(
+            filter(
+                lambda node: not is_team_sector(self.team_id, node.x, node.y),
+                invisible_reward_nodes,
+            )
+        )
 
         for ship in list(available_ships):
-            if (ship.coordinates is None
-                or ship.energy <= Global.UNIT_SAP_COST
-            ):
+            if ship.coordinates is None or ship.energy <= Global.UNIT_SAP_COST:
                 continue
 
             for target_node in invisible_reward_nodes:
@@ -1151,11 +1180,17 @@ class Agent:
         return actions
 
     def find_relics(self):
-        self.all_relic_found_count = 0
+
+        # Fix immobile ships after step 50 dans le premier match
+        if (
+            self.match_number == 0
+            and all(node.explored_for_relic for node in self.space)
+            and len(self.space.relic_nodes) == 0
+        ):
+            print("CLEAR MAP ", file=stderr)
+            self.space.clear_exploration_info()
+
         if Global.ALL_RELICS_FOUND:
-            # self.all_relic_found_count += 1
-            # if self.all_relic_found_count == 1:
-            #     print(self.match_number*101+self.match_step+1, ' ALL RELIC FOUND', file=stderr)
             for ship in self.fleet:
                 if ship.task == "find_relics":
                     ship.task = None
@@ -1353,7 +1388,7 @@ class Agent:
 
             if not actions or ship.energy < energy:
                 return False
-            
+
             # elif actions and ship.energy < energy:
             #     ship.action = actions[0]
             #     ship.task = None
