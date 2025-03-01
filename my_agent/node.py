@@ -1,3 +1,5 @@
+from sys import stderr
+
 from base import NodeType
 
 class Node:

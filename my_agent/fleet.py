@@ -1,3 +1,5 @@
+from sys import stderr
+
 from ship import Ship
 from base import Global, NodeType
 from space import Space

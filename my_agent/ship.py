@@ -1,3 +1,5 @@
+from sys import stderr
+
 from node import Node
 from base import ActionType
 
