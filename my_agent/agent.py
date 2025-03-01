@@ -639,9 +639,9 @@ class Agent:
         self.find_relics()
         self.find_rewards()
         self.harvest()
-        self.gather_energy()
-        self.sap()
-        self.check()
+        # self.gather_energy()
+        # self.sap()
+        # self.check()
         return self.create_actions_array()
 
     def gather_energy(self):
@@ -660,6 +660,8 @@ class Agent:
                 ship.task != "harvest"
                 or ship.coordinates is None
                 or ship.target is None
+                or (ship.task == "harvest" and ship.target == ship.node) # ship deja en train d'harvest
+                or manhattan_distance(ship.coordinates, ship.target.coordinates) < Global.UNIT_SAP_RANGE // 1.5 # Deja trop proche du reward pour s'arrêter la
             ):
                 continue
 
@@ -750,8 +752,7 @@ class Agent:
                         if actions:
                             ship.action = actions[0]
                             # Temporarily change task but keep the original target
-                            ship.task = "gather_energy"
-                            # print("GATHERING ", self.match_number*101+1+self.match_step, ship.unit_id, file=stderr)
+                            print("GATHERING ", self.match_number*101+1+self.match_step, ship.unit_id, file=stderr)
 
     def check(self):
         main_targets = set()  # reward nodes

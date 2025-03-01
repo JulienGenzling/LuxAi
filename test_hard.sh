@@ -1,1 +1,0 @@
-luxai-s3 my_agent_1100/main.py my_agent/main.py --output=replay.html

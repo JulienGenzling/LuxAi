@@ -96,13 +96,12 @@ def create_weights(space):
                 node_energy = Global.HIDDEN_NODE_ENERGY
 
             # pathfinding can't deal with negative weight
-            weight = Global.MAX_ENERGY_PER_TILE + 1 - node_energy
+            weight = Global.MAX_ENERGY_PER_TILE + 1 - 2 * node_energy
 
         if node.type == NodeType.nebula:
-            weight += Global.NEBULA_ENERGY_REDUCTION
+            weight += 1.5 * Global.NEBULA_ENERGY_REDUCTION
 
         weights[node.y][node.x] = weight
-
     return weights
 
 
@@ -150,3 +149,14 @@ def path_to_actions(path):
         last_position = (x, y)
 
     return actions
+
+
+def find_closest_ship(xy, fleet):
+    min_dist = np.inf
+    closest_ship = None
+    for ship in fleet:
+        ship_dist = manhattan_distance(ship.coordinates, xy)
+        if ship_dist < min_dist:
+            min_dist = ship_dist 
+            closest_ship = ship
+    return closest_ship, min_dist

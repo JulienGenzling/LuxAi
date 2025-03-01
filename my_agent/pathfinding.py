@@ -96,13 +96,12 @@ def create_weights(space):
                 node_energy = Global.HIDDEN_NODE_ENERGY
 
             # pathfinding can't deal with negative weight
-            weight = Global.MAX_ENERGY_PER_TILE + 1 - node_energy
+            weight = Global.MAX_ENERGY_PER_TILE + 1 - 2 * node_energy
 
         if node.type == NodeType.nebula:
-            weight += Global.NEBULA_ENERGY_REDUCTION
+            weight += 1.5 * Global.NEBULA_ENERGY_REDUCTION
 
         weights[node.y][node.x] = weight
-
     return weights
 
 

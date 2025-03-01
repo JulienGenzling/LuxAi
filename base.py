@@ -18,6 +18,7 @@ class Global:
     UNIT_MOVE_COST = 1  # OPTIONS: list(range(1, 6))
     UNIT_SAP_COST = 30  # OPTIONS: list(range(30, 51))
     UNIT_SAP_RANGE = 3  # OPTIONS: list(range(3, 8))
+    UNIT_SAP_DROPOFF_FACTOR = 0.5 # OPTIONS: [0.25, 0.5, 1]
     UNIT_SENSOR_RANGE = 2  # OPTIONS: [1, 2, 3, 4]
     OBSTACLE_MOVEMENT_PERIOD = 20  # OPTIONS: 6.67, 10, 20, 40
     OBSTACLE_MOVEMENT_DIRECTION = (0, 0)  # OPTIONS: [(1, -1), (-1, 1)]
@@ -47,6 +48,7 @@ class Global:
     # - `False`: The sensors did not detect any changes.
     # This information will be used to determine the speed and direction of obstacle movement.
     OBSTACLES_MOVEMENT_STATUS = []
+    NEBULA_ENERGY_OBSERVATIONS = []
 
     # Others:
 
