@@ -267,6 +267,7 @@ class Space:
             if period is not None:
                 Global.OBSTACLE_MOVEMENT_PERIOD_FOUND = True
                 Global.OBSTACLE_MOVEMENT_PERIOD = period
+                print(Global.OBSTACLE_MOVEMENT_DIRECTION, Global.OBSTACLE_MOVEMENT_PERIOD, file=stderr)
 
             if obstacles_shifted:
                 clear_map_info()
@@ -305,16 +306,16 @@ class Space:
 
     @staticmethod
     def _find_obstacle_movement_period(obstacles_movement_status):
-        if len(obstacles_movement_status) < 81:
+        if len(obstacles_movement_status) < 21:
             return
 
         num_movements = sum(obstacles_movement_status)
 
-        if num_movements <= 2:
+        if num_movements <= 0:
             return 40
-        elif num_movements <= 4:
+        elif num_movements <= 1:
             return 20
-        elif num_movements <= 8:
+        elif num_movements <= 2:
             return 10
         else:
             return 20 / 3

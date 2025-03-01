@@ -639,7 +639,7 @@ class Agent:
         self.find_relics()
         self.find_rewards()
         self.harvest()
-        # self.gather_energy()
+        self.gather_energy()
         self.sap()
         self.check()
         return self.create_actions_array()
