@@ -44,4 +44,7 @@ for i in {1..100}; do
     fi
 done
 
-echo ""
+echo ""  # New line for better formatting
+echo "Final Results:"
+echo "Player 0 Wins: $total_series_wins_player_0"
+echo "Player 1 Wins: $total_series_wins_player_1"

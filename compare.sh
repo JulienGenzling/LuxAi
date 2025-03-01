@@ -25,12 +25,12 @@ draw_bar() {
     echo -n " $total tests"
 }
 
-# Run test.sh 20 times
+# Run test.sh 100 times
 for i in {1..100}; do
     output=$(bash test.sh)
     
-    wins_player_0=$(echo "$output" | sed -n "s/.*'player_0': array(\([0-9]*\),.*/\1/p")
-    wins_player_1=$(echo "$output" | sed -n "s/.*'player_1': array(\([0-9]*\),.*/\1/p")
+    wins_player_0=$(echo "$output" | sed -n "s/.'player_0': array(\([0-9]\),.*/\1/p")
+    wins_player_1=$(echo "$output" | sed -n "s/.'player_1': array(\([0-9]\),.*/\1/p")
     
     if [[ -n "$wins_player_0" && -n "$wins_player_1" ]]; then
         if (( wins_player_1 > wins_player_0 )); then
@@ -44,4 +44,7 @@ for i in {1..100}; do
     fi
 done
 
-echo ""
+echo ""  # New line for better formatting
+echo "Final Results:"
+echo "Player 0 Wins: $total_series_wins_player_0"
+echo "Player 1 Wins: $total_series_wins_player_1"
