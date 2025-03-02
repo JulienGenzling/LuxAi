@@ -28,6 +28,7 @@ from harvest import harvest
 from gather_energy import gather_energy
 from sap import sap
 from check import check
+from dropoff import calibrate_sap_dropoff_factor
 
 class Agent:
 
@@ -74,12 +75,18 @@ class Agent:
         self.fleet.update(obs, self.space)
         self.opp_fleet.update(obs, self.space)
 
+                
         find_relics(self)
         find_rewards(self)
         harvest(self)
-        gather_energy(self)
-        sap(self, self.match_step)
+        # gather_energy(self)
+        if Global.UNIT_SENSOR_RANGE >= 3 and self.match_number <= 1:
+            used_ship_for_dropoff = calibrate_sap_dropoff_factor(self)
+            sap(self, self.match_step, used_ship_for_dropoff)
+        else:
+            sap(self, self.match_step, None)
         check(self)
+
         return self.create_actions_array()
 
     def create_actions_array(self):

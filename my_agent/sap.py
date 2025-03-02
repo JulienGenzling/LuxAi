@@ -5,27 +5,39 @@ from base import Global, ActionType, warp_point, NodeType, is_team_sector
 from pathfinding import astar, find_closest_target, create_weights, nearby_positions
 
 
-def sap(self, match_step):
+def sap(self, match_step, used_ship_for_dropoff):
 
     # Initial available ships
     available_ships = set()
+    dropoff_id = used_ship_for_dropoff.unit_id if used_ship_for_dropoff != None else None
     for ship in self.fleet:
-        if ship.energy > Global.UNIT_SAP_COST and not (
-            ship.task == "harvest" and ship.node != ship.target
+        if (
+            ship.energy > Global.UNIT_SAP_COST
+            and ship.unit_id != dropoff_id
+            and not (ship.task == "harvest" and ship.node != ship.target)
         ):
             available_ships.add(ship)
 
-    sap_1(self, available_ships)
+    # Ne pas target les ships tests qu'on target pour calculer le dropoff factor sinon ça va casser la mesure
+    if hasattr(self, '_sap_tracking'):
+        dropoff_targets = self._sap_tracking["calibration_targets"]
+        dropoff_target_ids = [elem[0] for elem in dropoff_targets]
+    else:
+        dropoff_target_ids = []
+
+    sap_1(self, available_ships, dropoff_target_ids)
     if available_ships:
-        sap_2(self, available_ships)  # Sap other ships
+        sap_2(self, available_ships, dropoff_target_ids)  # Sap other ships
     if available_ships and match_step >= 30:
         sap_3(self, available_ships)  # Blind sap on enemy reward nodes
 
 
-def sap_1(self, available_ships):
+def sap_1(self, available_ships, dropoff_target_ids):
     # Find all enemy ship positions
     enemy_positions = [
-        (enemy.coordinates[0], enemy.coordinates[1]) for enemy in self.opp_fleet
+        (enemy.coordinates[0], enemy.coordinates[1])
+        for enemy in self.opp_fleet
+        if enemy.unit_id not in dropoff_target_ids
     ]
 
     # Find clusters of enemies (ships that are adjacent to each other)
@@ -121,7 +133,7 @@ def _calculate_optimal_sap_position(self, cluster):
 
         if enemy_ship:
             # Get the predicted position
-            preshot_pos = _preshot(self, enemy_ship)
+            preshot_pos = preshot(self, enemy_ship)
             if preshot_pos:
                 predicted_positions.append(preshot_pos)
             else:
@@ -170,13 +182,15 @@ def _calculate_optimal_sap_position(self, cluster):
     return best_position, best_score
 
 
-def sap_2(self, available_ships):
+def sap_2(self, available_ships, dropoff_target_ids):
 
     if self.opp_fleet:
         prioritized_enemies = []
         normal_enemies = []
 
         for enemy_ship in self.opp_fleet:
+            if enemy_ship.unit_id in dropoff_target_ids:
+                continue
             if enemy_ship.node.reward or _is_near_relic(self, enemy_ship):
                 prioritized_enemies.append(enemy_ship)
             else:
@@ -186,7 +200,7 @@ def sap_2(self, available_ships):
         for i, target_list in enumerate([prioritized_enemies, normal_enemies]):
             for enemy_ship in target_list:
                 # Predict where the enemy will move to
-                predicted_pos = _preshot(self, enemy_ship)
+                predicted_pos = preshot(self, enemy_ship)
                 if predicted_pos:  # there is a preshot
 
                     # Sort available ships by distance to target (furthest first for range advantage)
@@ -230,7 +244,7 @@ def sap_2(self, available_ships):
                         available_ships.remove(ship)
 
 
-def _preshot(self, ship):
+def preshot(self, ship):
     # Si l'enemy ship est sur un reward node, on considère qu'il est immobile
     x, y = ship.coordinates
     if ship.node.reward:
