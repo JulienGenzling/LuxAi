@@ -67,19 +67,7 @@ class Fleet:
                         nebula_reduction = expected_energy - ship.energy
 
                         # Only record if reduction is positive (to avoid confusing with other energy changes)
-                        if nebula_reduction in [0, 1, 2, 3, 5, 25]:
-                            Global.NEBULA_ENERGY_OBSERVATIONS.append(nebula_reduction)
-
-                            # Update the estimate once we have enough observations
-                            if len(Global.NEBULA_ENERGY_OBSERVATIONS) >= 3:
-                                # Use the most common value observed
-                                from collections import Counter
-
-                                counter = Counter(Global.NEBULA_ENERGY_OBSERVATIONS)
-                                most_common = counter.most_common(1)[0][0]
-
-                                # Only update if we're confident
-                                if counter[most_common] >= 2:
-                                    Global.NEBULA_ENERGY_REDUCTION = most_common
+                        if nebula_reduction in [0, 1, 2, 3, 5, 25] and Global.NEBULA_ENERGY_REDUCTION is None:
+                            Global.NEBULA_ENERGY_REDUCTION = nebula_reduction
             else:
                 ship.clean()
