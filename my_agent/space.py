@@ -267,7 +267,6 @@ class Space:
             if period is not None:
                 Global.OBSTACLE_MOVEMENT_PERIOD_FOUND = True
                 Global.OBSTACLE_MOVEMENT_PERIOD = period
-                print(Global.OBSTACLE_MOVEMENT_DIRECTION, Global.OBSTACLE_MOVEMENT_PERIOD, file=stderr)
 
             if obstacles_shifted:
                 clear_map_info()
