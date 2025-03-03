@@ -10,6 +10,7 @@ def sap(self, match_step, used_ship_for_dropoff):
     # Initial available ships
     available_ships = set()
     dropoff_id = used_ship_for_dropoff.unit_id if used_ship_for_dropoff != None else None
+    
     for ship in self.fleet:
         if (
             ship.energy > Global.UNIT_SAP_COST
