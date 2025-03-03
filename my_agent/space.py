@@ -60,6 +60,9 @@ class Space:
         self._update_relic_map(step, obs, team_id, team_reward)
 
     def _update_relic_map(self, step, obs, team_id, team_reward):
+        match = get_match_number(step)
+        match_step = get_match_step(step)
+
         for mask, xy in zip(obs["relic_nodes_mask"], obs["relic_nodes"]):
             if mask and not self.get_node(*xy).relic:
                 # We have found a new relic.
@@ -78,13 +81,13 @@ class Space:
                 all_relics_found = False
 
             if not node.explored_for_reward:
+                # print(f"[match {match}| step {match_step}] Node", node, "is not explored for reward", file=stderr)
                 all_rewards_found = False
 
         Global.ALL_RELICS_FOUND = all_relics_found
         Global.ALL_REWARDS_FOUND = all_rewards_found
+        # print(f"[match {match}| step {match_step}] All rewards found", Global.ALL_REWARDS_FOUND, file=stderr)
 
-        match = get_match_number(step)
-        match_step = get_match_step(step)
         num_relics_th = 2 * min(match, Global.LAST_MATCH_WHEN_RELIC_CAN_APPEAR) + 1
 
         if not Global.ALL_RELICS_FOUND:
@@ -100,6 +103,7 @@ class Space:
                 match_step > Global.LAST_MATCH_STEP_WHEN_RELIC_CAN_APPEAR
                 or len(self._relic_nodes) >= num_relics_th
             ):
+                # print(f"[match {match}| step {match_step}] Update rewards, {len(self._relic_nodes)} relics, theoric number: {num_relics_th}", file=stderr)
                 self._update_reward_status_from_relics_distribution()
                 self._update_reward_results(obs, team_id, team_reward)
                 self._update_reward_status_from_reward_results()
@@ -267,6 +271,7 @@ class Space:
             if period is not None:
                 Global.OBSTACLE_MOVEMENT_PERIOD_FOUND = True
                 Global.OBSTACLE_MOVEMENT_PERIOD = period
+                # print(Global.OBSTACLE_MOVEMENT_DIRECTION, Global.OBSTACLE_MOVEMENT_PERIOD, file=stderr)
 
             if obstacles_shifted:
                 clear_map_info()

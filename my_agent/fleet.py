@@ -4,6 +4,8 @@ from ship import Ship
 from base import Global, NodeType
 from space import Space
 
+from collections import Counter
+
 class Fleet:
     def __init__(self, team_id):
         self.team_id: int = team_id
@@ -32,6 +34,7 @@ class Fleet:
             for ship in self.ships
             if ship.node is not None
         }
+        # step = obs['match_steps']
 
         # Update points from observation
         self.points = int(obs["team_points"][self.team_id])
@@ -44,6 +47,9 @@ class Fleet:
             obs["units"]["energy"][self.team_id],
         ):
             if active:
+                # if step < 10:
+                #     print("Match steps", step, file=stderr)
+                #     print(ship, active, position, energy, file=stderr)
                 previous_state = previous_ship_states.get(ship.unit_id)
                 new_node = space.get_node(*position)
 
@@ -65,9 +71,17 @@ class Fleet:
 
                         # Calculate actual nebula reduction
                         nebula_reduction = expected_energy - ship.energy
+                        # if step < 10:
+                        #     print(prev_energy, Global.UNIT_MOVE_COST, expected_energy, ship.node.energy, file=stderr)
+                        #     print(nebula_reduction, file=stderr)
 
                         # Only record if reduction is positive (to avoid confusing with other energy changes)
-                        if nebula_reduction in [0, 1, 2, 3, 5, 25] and Global.NEBULA_ENERGY_REDUCTION is None:
-                            Global.NEBULA_ENERGY_REDUCTION = nebula_reduction
+                        if nebula_reduction in [0, 1, 2, 3, 5, 25]:
+                            Global.NEBULA_ENERGY_OBSERVATIONS.append(nebula_reduction)
+
+                            # Use the most common value observed
+                            counter = Counter(Global.NEBULA_ENERGY_OBSERVATIONS)
+                            most_common = counter.most_common(1)[0][0]
+                            Global.NEBULA_ENERGY_REDUCTION = most_common
             else:
                 ship.clean()

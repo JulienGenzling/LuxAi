@@ -76,17 +76,17 @@ class Agent:
         self.opp_fleet.update(obs, self.space)
 
                 
+        print(f"[match {self.match_number}| step {self.match_step}]", file=stderr)
         find_relics(self)
         find_rewards(self)
         harvest(self)
         # gather_energy(self)
-        if Global.UNIT_SENSOR_RANGE >= 3 and self.match_number <= 1:
-            used_ship_for_dropoff = calibrate_sap_dropoff_factor(self)
-            sap(self, self.match_step, used_ship_for_dropoff)
-        else:
-            sap(self, self.match_step, None)
-        check(self)
-
+        # if Global.UNIT_SENSOR_RANGE >= 3 and self.match_number <= 1:
+        #     used_ship_for_dropoff = calibrate_sap_dropoff_factor(self)
+        #     sap(self, self.match_step, used_ship_for_dropoff)
+        # else:
+        #     sap(self, self.match_step, None)
+        # check(self)
         return self.create_actions_array()
 
     def create_actions_array(self):

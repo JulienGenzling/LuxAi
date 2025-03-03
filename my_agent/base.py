@@ -24,7 +24,7 @@ class Global:
     OBSTACLE_MOVEMENT_DIRECTION = (0, 0)  # OPTIONS: [(1, -1), (-1, 1)]
 
     # We will NOT find the exact value of these constants during the game
-    NEBULA_ENERGY_REDUCTION = None  # OPTIONS: [0, 1, 2, 3, 5, 25]
+    NEBULA_ENERGY_REDUCTION = 2  # OPTIONS: [0, 1, 2, 3, 5, 25]
 
     # Exploration flags:
 
