@@ -26,9 +26,11 @@ def find_rewards(self):
         return
 
     unexplored_relics = get_unexplored_relics(self)
+    # print(unexplored_relics, file=stderr)
 
     relic_node_to_ship = {}
     for ship in self.fleet:
+        # print(ship, ship.task, ship.target, ship.energy > Global.UNIT_MOVE_COST * 5, file=stderr)
         if ship.task == "find_rewards":
             if ship.target is None:
                 ship.task = None
@@ -42,7 +44,7 @@ def find_rewards(self):
             else:
                 ship.task = None
                 ship.target = None
-
+            
     for relic in unexplored_relics:
         if relic not in relic_node_to_ship:
 
@@ -82,6 +84,7 @@ def find_rewards(self):
                     if n.explored_for_reward and n.is_walkable
                 ],
             )
+        # print(ship, target, can_pause, file=stderr)
 
         if not target:
             return False
@@ -107,6 +110,7 @@ def find_rewards(self):
     for n, s in sorted(list(relic_node_to_ship.items()), key=lambda _: _[1].unit_id):
         if set_task(s, n, can_pause):
             if s.target == s.node:
+                # print(s, "target == node", file=stderr)
                 can_pause = False
                 pass
         else:

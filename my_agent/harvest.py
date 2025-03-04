@@ -58,6 +58,7 @@ def harvest(self):
     for n in self.space.reward_nodes:
         if n.is_walkable and n not in booked_nodes:
             targets.add(n.coordinates)
+
     if not targets:
         return
 

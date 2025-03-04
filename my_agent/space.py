@@ -108,42 +108,195 @@ class Space:
                 self._update_reward_results(obs, team_id, team_reward)
                 self._update_reward_status_from_reward_results()
 
-    def _update_reward_status_from_reward_results(self):
-        # We will use Global.REWARD_RESULTS to identify which nodes yield points
-        for result in Global.REWARD_RESULTS:
 
+    def _update_reward_status_from_reward_results(self):
+        """
+        A more robust approach to updating the reward-status for nodes based on
+        Global.REWARD_RESULTS. We first run the old logic, then do an additional pass
+        comparing sets of unknown tiles across different results to deduce if certain
+        tiles are guaranteed to be (or not be) reward tiles.
+        """
+
+        # We'll store any newly deduced statuses and apply them after inference
+        must_be_reward = set()   # set of (x,y) coords that must be reward
+        must_be_empty = set()    # set of (x,y) coords that must be empty
+
+        # --- PASS 1: The existing simple logic -----------------------------------
+        for result in Global.REWARD_RESULTS:
             unknown_nodes = set()
-            known_reward = 0
+            known_reward_count = 0
+
             for n in result["nodes"]:
+                # skip nodes that are known empty (explored_for_reward but not reward)
                 if n.explored_for_reward and not n.reward:
                     continue
 
+                # skip nodes that are known reward
                 if n.reward:
-                    known_reward += 1
+                    known_reward_count += 1
                     continue
 
+                # otherwise, it's an unknown node
                 unknown_nodes.add(n)
 
             if not unknown_nodes:
-                # all nodes already explored, nothing to do here
+                continue  # all fully resolved for this result
+
+            reward_delta = result["reward"] - known_reward_count
+
+            if reward_delta == 0:
+                # none of these unknown nodes gave any points
+                for node in unknown_nodes:
+                    must_be_empty.add(node.coordinates)
+
+            elif reward_delta == len(unknown_nodes):
+                # all of these unknown nodes gave points
+                for node in unknown_nodes:
+                    must_be_reward.add(node.coordinates)
+
+            # else:  0 < reward_delta < len(unknown_nodes)
+            #        can't decide with single-step logic -> handle in pass 2
+
+        # Immediately apply the certain inferences from PASS 1
+        for (x, y) in must_be_empty:
+            self._update_reward_status(x, y, status=False)
+        for (x, y) in must_be_reward:
+            self._update_reward_status(x, y, status=True)
+
+        # --- PASS 2: Attempt more advanced inference across pairs of results -----
+        changed = True
+        while changed:
+            changed = False
+
+            new_must_empty = set()
+            new_must_reward = set()
+
+            # We'll do pairwise comparisons
+            for i in range(len(Global.REWARD_RESULTS)):
+                for j in range(i + 1, len(Global.REWARD_RESULTS)):
+
+                    resA = Global.REWARD_RESULTS[i]
+                    resB = Global.REWARD_RESULTS[j]
+
+                    # Step 1: Gather unknown nodes for each result ignoring
+                    # nodes that are definitely known from must_be_reward/empty
+                    A_unknown, A_known = self.collect_unknown_and_known_reward(
+                        resA, must_be_empty, must_be_reward
+                    )
+                    B_unknown, B_known = self.collect_unknown_and_known_reward(
+                        resB, must_be_empty, must_be_reward
+                    )
+
+                    # Step 2: Effective new reward that belongs to these unknown sets
+                    A_reward = resA["reward"] - A_known
+                    B_reward = resB["reward"] - B_known
+
+                    # Step 3: Compare sets
+                    diffA = A_unknown - B_unknown  # the set difference
+                    diffB = B_unknown - A_unknown
+
+                    # If there's exactly 1 node difference in sets:
+                    if len(diffA) == 1 and len(diffB) == 0:
+                        (diff_node,) = diffA  # unpack the single node
+                        # Compare reward differences
+                        if A_reward == B_reward + 1:
+                            # diff_node must be a reward
+                            if diff_node not in must_be_reward:
+                                new_must_reward.add(diff_node)
+                        elif A_reward == B_reward:
+                            # diff_node must be empty
+                            if diff_node not in must_be_empty:
+                                new_must_empty.add(diff_node)
+
+                    elif len(diffB) == 1 and len(diffA) == 0:
+                        (diff_node,) = diffB
+                        if B_reward == A_reward + 1:
+                            if diff_node not in must_be_reward:
+                                new_must_reward.add(diff_node)
+                        elif B_reward == A_reward:
+                            if diff_node not in must_be_empty:
+                                new_must_empty.add(diff_node)
+
+                    # You can further extend logic for 2+ differences, etc.
+
+            # Apply any new deductions we found in this pass
+            if new_must_empty or new_must_reward:
+                changed = True
+                for coords in new_must_empty:
+                    if coords not in must_be_empty and coords not in must_be_reward:
+                        must_be_empty.add(coords)
+                        self._update_reward_status(*coords, status=False)
+
+                for coords in new_must_reward:
+                    if coords not in must_be_reward and coords not in must_be_empty:
+                        must_be_reward.add(coords)
+                        self._update_reward_status(*coords, status=True)
+
+
+    def collect_unknown_and_known_reward(self, result, must_be_empty, must_be_reward):
+        """
+        Return:
+        - unknown_set: set of (x, y) coords still unknown in this result
+        - known_count: how many nodes in this result are deduced to be reward
+        """
+        unknown_set = set()
+        known_count = 0
+
+        for node in result["nodes"]:
+            coords = node.coordinates
+
+            if coords in must_be_empty:
+                # definitely empty, skip
                 continue
+            elif coords in must_be_reward:
+                # definitely reward, increment known reward
+                known_count += 1
+            else:
+                # If node.explored_for_reward but not node.reward => also empty
+                if node.explored_for_reward and not node.reward:
+                    # same as must_be_empty
+                    continue
+                # Otherwise, it's still unknown
+                unknown_set.add(coords)
 
-            reward = result["reward"] - known_reward  # reward from unknown_nodes
+        return unknown_set, known_count
 
-            if reward == 0:
-                # all nodes are empty
-                for node in unknown_nodes:
-                    self._update_reward_status(*node.coordinates, status=False)
+    # def _update_reward_status_from_reward_results(self):
+    #     # We will use Global.REWARD_RESULTS to identify which nodes yield points
+    #     for result in Global.REWARD_RESULTS:
 
-            elif reward == len(unknown_nodes):
-                # all nodes yield points
-                for node in unknown_nodes:
-                    self._update_reward_status(*node.coordinates, status=True)
+    #         unknown_nodes = set()
+    #         known_reward = 0
+    #         for n in result["nodes"]:
+    #             if n.explored_for_reward and not n.reward:
+    #                 continue
 
-            elif reward > len(unknown_nodes):
-                # We shouldn't be here, but sometimes we are. It's not good.
-                # Maybe I'll fix it later.
-                pass
+    #             if n.reward:
+    #                 known_reward += 1
+    #                 continue
+
+    #             unknown_nodes.add(n)
+
+    #         if not unknown_nodes:
+    #             # all nodes already explored, nothing to do here
+    #             continue
+
+    #         reward = result["reward"] - known_reward  # reward from unknown_nodes
+
+    #         if reward == 0:
+    #             # all nodes are empty
+    #             for node in unknown_nodes:
+    #                 self._update_reward_status(*node.coordinates, status=False)
+
+    #         elif reward == len(unknown_nodes):
+    #             # all nodes yield points
+    #             for node in unknown_nodes:
+    #                 self._update_reward_status(*node.coordinates, status=True)
+
+    #         elif reward > len(unknown_nodes):
+    #             # We shouldn't be here, but sometimes we are. It's not good.
+    #             # Maybe I'll fix it later.
+    #             pass
 
     def _update_reward_results(self, obs, team_id, team_reward):
         ship_nodes = set()

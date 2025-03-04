@@ -13,7 +13,7 @@ from pathfinding import (
 
 def find_relics(self):
 
-    # Fix immobile ships after step 50 dans le premier match
+    # Fix immobile ships after all nodes have been explored but no relic found in the first match.
     if (
         self.match_number == 0
         and all(node.explored_for_relic for node in self.space)

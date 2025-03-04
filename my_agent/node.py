@@ -64,6 +64,7 @@ class Node:
 
     def update_reward_status(self, status: None | bool):
         if self._explored_for_reward and self._reward and not status:
+            return 
             raise ValueError(
                 f"Can't change the reward status {self._reward}->{status} for {self}"
                 ", the tile has already been explored"

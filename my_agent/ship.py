@@ -16,7 +16,7 @@ class Ship:
 
     def __repr__(self):
         return (
-            f"Ship({self.unit_id}, node={self.node.coordinates}, energy={self.energy})"
+            f"Ship({self.unit_id}, node={self.node.coordinates if self.node else None}, energy={self.energy})"
         )
 
     @property
