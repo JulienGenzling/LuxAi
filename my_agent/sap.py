@@ -53,7 +53,7 @@ def sap_1(self, available_ships, dropoff_target_ids):
         best_pos, damage_score = _calculate_optimal_sap_position(self, cluster)
 
         if (
-            best_pos and damage_score > 1.0
+            best_pos and damage_score > Global.UNIT_SAP_COST
         ):  # Only worth it if we can hit more than one ship effectively
             # Find ships that can hit this position
             ships_in_range = []
@@ -73,7 +73,7 @@ def sap_1(self, available_ships, dropoff_target_ids):
             ships_in_range.sort(key=lambda x: (-x[1], x[0].energy))
 
             # Use 1-2 ships depending on cluster size and damage potential
-            ships_to_use = min(len(ships_in_range), 1 + (damage_score > 1.5))
+            ships_to_use = min(len(ships_in_range), 1 + (damage_score > 1.5 * Global.UNIT_SAP_COST))
 
             # Assign ships to sap this target
             for i in range(ships_to_use):
@@ -136,16 +136,16 @@ def _calculate_optimal_sap_position(self, cluster):
             # Get the predicted position
             preshot_pos = preshot(self, enemy_ship)
             if preshot_pos:
-                predicted_positions.append(preshot_pos)
+                predicted_positions.append((preshot_pos, enemy_ship.energy))
             else:
                 # If no prediction is available, use current position
-                predicted_positions.append(pos)
+                predicted_positions.append((pos, enemy_ship.energy))
         else:
             # Fallback to current position if ship not found
-            predicted_positions.append(pos)
+            predicted_positions.append((pos, 100))
 
     # Consider all positions in and around the predicted positions
-    for pos in predicted_positions:
+    for pos, energy in predicted_positions:
         x, y = pos
         # Center position
         potential_positions.add((x, y))
@@ -162,7 +162,7 @@ def _calculate_optimal_sap_position(self, cluster):
     # For each potential position, calculate the damage score using predicted positions
     for pos in potential_positions:
         score = 0
-        for enemy_pos in predicted_positions:
+        for enemy_pos, energy in predicted_positions:
             # Calculate Manhattan distance to determine splash damage
             dist = max(
                 abs(pos[0] - enemy_pos[0]),
@@ -171,10 +171,10 @@ def _calculate_optimal_sap_position(self, cluster):
 
             # Direct hit
             if dist == 0:
-                score += 1.0
+                score += min(Global.UNIT_SAP_COST, energy)
             # Splash damage (only if within 1 tile)
             elif dist == 1:
-                score += Global.UNIT_SAP_DROPOFF_FACTOR
+                score += min(Global.UNIT_SAP_COST * Global.UNIT_SAP_DROPOFF_FACTOR, energy)
 
         if score > best_score:
             best_score = score
@@ -230,7 +230,9 @@ def sap_2(self, available_ships, dropoff_target_ids):
                     if i == 0:
                         max_ships_to_use = 3 if enemy_ship.node.reward else 2
                     else:
-                        max_ships_to_use = 2 if enemy_ship.node.reward else 1
+                        max_ships_to_use = 1
+                    
+                    max_ships_to_use = max(min(max_ships_to_use, enemy_ship.energy//Global.UNIT_SAP_COST + 1), 0)
 
                     ships_to_use = min(len(ships_in_range), max_ships_to_use)
 
