@@ -1,7 +1,7 @@
 import heapq
 import numpy as np
 
-from base import SPACE_SIZE, NodeType, Global, ActionType
+from base import SPACE_SIZE, NodeType, Global, ActionType, warp_point
 
 CARDINAL_DIRECTIONS = [(0, 1), (0, -1), (1, 0), (-1, 0)]
 
@@ -160,3 +160,14 @@ def find_closest_ship(xy, fleet):
             min_dist = ship_dist 
             closest_ship = ship
     return closest_ship, min_dist
+
+def surrounding(self, node):
+    surrounding_nodes = []
+    directions = [(0, 0), (0, -1), (1, 0), (0, 1), (-1, 0)]
+    for dx, dy in directions:
+        if not (0 < node.x + dx < 23) or not (0 < node.y + dy < 23):
+            continue
+        new_x, new_y = warp_point(node.x + dx, node.y + dy)
+        adjacent_node = self.space.get_node(new_x, new_y)
+        surrounding_nodes.append(adjacent_node)
+    return surrounding_nodes

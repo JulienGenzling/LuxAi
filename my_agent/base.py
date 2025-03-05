@@ -81,6 +81,10 @@ _DIRECTIONS = [
     (0, 0),  # sap
 ]
 
+def invert_action(action):
+    direction = _DIRECTIONS[action]
+    new_direction = (-direction[0], -direction[1])
+    return _DIRECTIONS.index(new_direction)
 
 class ActionType(IntEnum):
     center = 0

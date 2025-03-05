@@ -29,6 +29,7 @@ from gather_energy import gather_energy
 from sap import sap
 from check import check
 from dropoff import calibrate_sap_dropoff_factor
+from cac import cac
 
 class Agent:
 
@@ -87,6 +88,7 @@ class Agent:
         else:
             sap(self, self.match_step, None)
         check(self)
+        cac(self)
         return self.create_actions_array()
 
     def create_actions_array(self):
