@@ -26,7 +26,8 @@ def check(self):
             secondary_targets.add(node)
 
     for ship in self.fleet.ships:
-        if ship.energy > Global.UNIT_MOVE_COST and ship.action == None:
+        if ship.energy > Global.UNIT_MOVE_COST and ship.action == None and ship.coordinates != None:
+            # print(ship.unit_id, " needs check", file=stderr)
             # print(match_number*100+match_step, " | ", ship.unit_id, " | ", ship.coordinates, file=stderr)
             if ship.node in main_targets and ship.node not in main_targets_occupied:
                 # print("ALREADY ON A REWARD NODE", file=stderr)

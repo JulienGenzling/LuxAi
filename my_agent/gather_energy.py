@@ -26,52 +26,54 @@ def gather_energy(self):
         )
 
         # Only consider energy gathering when heading to enemy territory
-        if target_in_enemy_territory:
+        # if target_in_enemy_territory:
             # Check if ship is getting close to target
-            approaching_target = manhattan_distance(ship.coordinates, ship.target.coordinates) < Global.UNIT_SAP_RANGE * 2
+        approaching_target = manhattan_distance(ship.coordinates, ship.target.coordinates) < Global.UNIT_SAP_RANGE * 2
+        
+        # Check if ship has enough energy
+        has_enough_energy = has_sufficient_energy(self, ship)
+        
+        # Gather energy if approaching target without enough energy
+        if approaching_target and not has_enough_energy:
+            # Find a good energy gathering spot
+            energy_spot = find_energy_spot(self, ship)
             
-            # Check if ship has enough energy
-            has_enough_energy = has_sufficient_energy(self, ship)
-            
-            # Gather energy if approaching target without enough energy
-            if approaching_target and not has_enough_energy:
-                # Find a good energy gathering spot
-                energy_spot = find_energy_spot(self, ship)
-                
-                if energy_spot:
-                    # Navigate to energy spot
-                    path = astar(
-                        create_weights(self.space), ship.coordinates, energy_spot
-                    )
+            if energy_spot:
+                # Navigate to energy spot
+                path = astar(
+                    create_weights(self.space), ship.coordinates, energy_spot
+                )
 
-                    if path:
-                        actions = path_to_actions(path)
-                        if actions:
-                            ship.action = actions[0]
-                            print(f"GATHERING: Ship {ship.unit_id} heading to energy spot at {energy_spot}", file=stderr)
-                            
-                            # If at energy spot, consider sapping enemy reward nodes
-                            if can_sap(ship):
-                                for reward_node in self.space.reward_nodes:
-                                    # Only target enemy reward nodes
-                                    if not is_team_sector(self.team_id, reward_node.x, reward_node.y):
-                                        # Check if in SAP range
-                                        in_sap_range = is_in_sap_range(ship.coordinates, reward_node.coordinates)
+                if path:
+                    actions = path_to_actions(path)
+                    if actions:
+                        ship.action = actions[0]
+                        if ship.task == None:
+                            print("Assigned gather to useless ship")
+                        print(f"GATHERING: Ship {ship.unit_id} heading to energy spot at {energy_spot}", file=stderr)
+                        
+                        # If at energy spot, consider sapping enemy reward nodes
+                        if can_sap(ship):
+                            for reward_node in self.space.reward_nodes:
+                                # Only target enemy reward nodes
+                                if not is_team_sector(self.team_id, reward_node.x, reward_node.y):
+                                    # Check if in SAP range
+                                    in_sap_range = is_in_sap_range(ship.coordinates, reward_node.coordinates)
+                                    
+                                    if in_sap_range:
+                                        # Check for enemy ships on node
+                                        enemies_on_node = any(
+                                            enemy.coordinates == reward_node.coordinates 
+                                            for enemy in self.opp_fleet 
+                                            if enemy.coordinates is not None
+                                        )
                                         
-                                        if in_sap_range:
-                                            # Check for enemy ships on node
-                                            enemies_on_node = any(
-                                                enemy.coordinates == reward_node.coordinates 
-                                                for enemy in self.opp_fleet 
-                                                if enemy.coordinates is not None
-                                            )
-                                            
-                                            # SAP if there are enemies or occasionally to prevent camping
-                                            if enemies_on_node or np.random.random() < 0.5:
-                                                ship.action = ActionType.sap
-                                                ship.sap = reward_node.coordinates
-                                                print(f"ENERGY GATHER SAP: Ship {ship.unit_id} sapping from {ship.coordinates} to {reward_node.coordinates}", file=stderr)
-                                                break
+                                        # SAP if there are enemies or occasionally to prevent camping
+                                        if enemies_on_node or np.random.random() < 0.5:
+                                            ship.action = ActionType.sap
+                                            ship.sap = reward_node.coordinates
+                                            print(f"ENERGY GATHER SAP: Ship {ship.unit_id} sapping from {ship.coordinates} to {reward_node.coordinates}", file=stderr)
+                                            break
 
 
 def has_sufficient_energy(self, ship):

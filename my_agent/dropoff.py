@@ -53,12 +53,12 @@ def analyze_splash_damage(self):
                 break
 
         if not current_ship or not current_ship.node.is_visible:
-            print("Enemy ship not here ", file=stderr)
+            # print("Enemy ship not here ", file=stderr)
             continue
         
         for ship in self.fleet:
             if manhattan_distance(ship.coordinates, current_ship.coordinates) <= 1: # Il y aura un terme de perte d'energie du au contact entre les 2 ships qu'on sait pas vraiment prendre en compte
-                print("Too close to one of our ships !", file=stderr)
+                # print("Too close to one of our ships !", file=stderr)
                 return
 
         # Add a condition to verify that the effective current position of the targeted ship is at at a distance of 1 (diagonals or top bottom left right) of the sap position where we sapped
@@ -67,7 +67,7 @@ def analyze_splash_damage(self):
             abs(current_ship.coordinates[1] - target_sap_pos[1]),
         )
         if dist_to_sap != 1:  # Must be exactly 1 tile away (diagonal or orthogonal)
-            print("Fail the splash target test because ", current_ship.coordinates,target_sap_pos,  file=stderr)
+            # print("Fail the splash target test because ", current_ship.coordinates,target_sap_pos,  file=stderr)
             continue
 
         # Get previous position and energy
@@ -79,35 +79,35 @@ def analyze_splash_damage(self):
             expected_energy_loss += Global.UNIT_MOVE_COST
         # Subtract energy gained from new position
         if current_ship.node.energy is not None:
-            print("node energy ", current_ship.node.energy, file=stderr)
+            # print("node energy ", current_ship.node.energy, file=stderr)
             expected_energy_loss -= current_ship.node.energy
         # Add nebula reduction if applicable
         if current_ship.node.type == NodeType.nebula:
             expected_energy_loss += Global.NEBULA_ENERGY_REDUCTION
 
         # Calculate actual energy loss
-        print("prev energy ", prev_energy, file=stderr)
-        print("cuurent ship energy ", current_ship.energy, file=stderr)
+        # print("prev energy ", prev_energy, file=stderr)
+        # print("cuurent ship energy ", current_ship.energy, file=stderr)
         actual_energy_loss = prev_energy - current_ship.energy
 
         # Unexpected energy loss might be from SAP
         sap_damage = actual_energy_loss - expected_energy_loss
-        print("SAP DAMAGE ", sap_damage, file=stderr)
+        # print("SAP DAMAGE ", sap_damage, file=stderr)
 
             # Calculate dropoff factor (splash damage / full damage)
         dropoff_factor = sap_damage / Global.UNIT_SAP_COST
 
-        print(
-            f"Calibration: Detected splash damage: {sap_damage}, calculated dropoff: {dropoff_factor:.2f}",
-            file=stderr,
-        )
+        # print(
+        #     f"Calibration: Detected splash damage: {sap_damage}, calculated dropoff: {dropoff_factor:.2f}",
+        #     file=stderr,
+        # )
 
         possible_values = [0.25, 0.5, 1]
         closest_value = min(possible_values, key=lambda x: abs(x - dropoff_factor))
 
         Global.UNIT_SAP_DROPOFF_FACTOR = closest_value
         self._sap_tracking["calibration_complete"] = True
-        print(f"SAP dropoff factor calibrated to {closest_value}", file=stderr)
+        # print(f"SAP dropoff factor calibrated to {closest_value}", file=stderr)
 
 
 def record_enemy_positions(self):
@@ -198,8 +198,8 @@ def find_calibration_targets(self):
                 self._sap_tracking["calibration_targets"].append(
                     (enemy_ship.unit_id, adj_pos)
                 )
-                print(
-                    f"Calibration timestep {self.match_number*101+self.match_step+1}: Ship {ship.unit_id} targeting position {adj_pos} adjacent to enemy {enemy_ship.unit_id}",
-                    file=stderr,
-                )
+                # print(
+                #     f"Calibration timestep {self.match_number*101+self.match_step+1}: Ship {ship.unit_id} targeting position {adj_pos} adjacent to enemy {enemy_ship.unit_id}",
+                #     file=stderr,
+                # )
                 return ship

@@ -752,7 +752,6 @@ class Agent:
                         if actions:
                             ship.action = actions[0]
                             # Temporarily change task but keep the original target
-                            print("GATHERING ", self.match_number*101+1+self.match_step, ship.unit_id, file=stderr)
 
     def check(self):
         main_targets = set()  # reward nodes
