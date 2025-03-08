@@ -63,6 +63,8 @@ class Space:
         match = get_match_number(step)
         match_step = get_match_step(step)
 
+        new_relic = False
+
         for mask, xy in zip(obs["relic_nodes_mask"], obs["relic_nodes"]):
             if mask and not self.get_node(*xy).relic:
                 # We have found a new relic.
@@ -70,6 +72,7 @@ class Space:
                 for x, y in nearby_positions(*xy, Global.RELIC_REWARD_RANGE):
                     if not self.get_node(x, y).reward:
                         self._update_reward_status(x, y, status=None)
+                new_relic = True
 
         all_relics_found = True
         all_rewards_found = True
@@ -90,6 +93,11 @@ class Space:
 
         num_relics_th = 2 * min(match, Global.LAST_MATCH_WHEN_RELIC_CAN_APPEAR) + 1
 
+        if new_relic:
+            Global.ALL_RELICS_FOUND = False
+            Global.REWARD_RESULTS = []
+            # print(len(Global.REWARD_RESULTS), Global.ALL_RELICS_FOUND, Global.ALL_REWARDS_FOUND, len(self._relic_nodes), num_relics_th, file=stderr)
+
         if not Global.ALL_RELICS_FOUND:
             if len(self._relic_nodes) >= num_relics_th:
                 # all relics found, mark all nodes as explored for relics
@@ -97,7 +105,7 @@ class Space:
                 for node in self:
                     if not node.explored_for_relic:
                         self._update_relic_status(*node.coordinates, status=False)
-
+            
         if not Global.ALL_REWARDS_FOUND:
             if (
                 match_step > Global.LAST_MATCH_STEP_WHEN_RELIC_CAN_APPEAR
@@ -108,6 +116,8 @@ class Space:
                 self._update_reward_results(obs, team_id, team_reward)
                 self._update_reward_status_from_reward_results()
 
+        # if new_relic:
+        #     show_exploration_map(self)
 
     def _update_reward_status_from_reward_results(self):
         """
@@ -163,6 +173,7 @@ class Space:
         for (x, y) in must_be_reward:
             self._update_reward_status(x, y, status=True)
 
+        
         # --- PASS 2: Attempt more advanced inference across pairs of results -----
         changed = True
         while changed:
@@ -261,42 +272,42 @@ class Space:
 
         return unknown_set, known_count
 
-    # def _update_reward_status_from_reward_results(self):
-    #     # We will use Global.REWARD_RESULTS to identify which nodes yield points
-    #     for result in Global.REWARD_RESULTS:
+    def _update_reward_status_from_reward_results(self):
+        # We will use Global.REWARD_RESULTS to identify which nodes yield points
+        for result in Global.REWARD_RESULTS:
 
-    #         unknown_nodes = set()
-    #         known_reward = 0
-    #         for n in result["nodes"]:
-    #             if n.explored_for_reward and not n.reward:
-    #                 continue
+            unknown_nodes = set()
+            known_reward = 0
+            for n in result["nodes"]:
+                if n.explored_for_reward and not n.reward:
+                    continue
 
-    #             if n.reward:
-    #                 known_reward += 1
-    #                 continue
+                if n.reward:
+                    known_reward += 1
+                    continue
 
-    #             unknown_nodes.add(n)
+                unknown_nodes.add(n)
 
-    #         if not unknown_nodes:
-    #             # all nodes already explored, nothing to do here
-    #             continue
+            if not unknown_nodes:
+                # all nodes already explored, nothing to do here
+                continue
 
-    #         reward = result["reward"] - known_reward  # reward from unknown_nodes
+            reward = result["reward"] - known_reward  # reward from unknown_nodes
 
-    #         if reward == 0:
-    #             # all nodes are empty
-    #             for node in unknown_nodes:
-    #                 self._update_reward_status(*node.coordinates, status=False)
+            if reward == 0:
+                # all nodes are empty
+                for node in unknown_nodes:
+                    self._update_reward_status(*node.coordinates, status=False)
 
-    #         elif reward == len(unknown_nodes):
-    #             # all nodes yield points
-    #             for node in unknown_nodes:
-    #                 self._update_reward_status(*node.coordinates, status=True)
+            elif reward == len(unknown_nodes):
+                # all nodes yield points
+                for node in unknown_nodes:
+                    self._update_reward_status(*node.coordinates, status=True)
 
-    #         elif reward > len(unknown_nodes):
-    #             # We shouldn't be here, but sometimes we are. It's not good.
-    #             # Maybe I'll fix it later.
-    #             pass
+            elif reward > len(unknown_nodes):
+                # We shouldn't be here, but sometimes we are. It's not good.
+                # Maybe I'll fix it later.
+                pass
 
     def _update_reward_results(self, obs, team_id, team_reward):
         ship_nodes = set()

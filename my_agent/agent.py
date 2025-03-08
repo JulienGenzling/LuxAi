@@ -63,12 +63,14 @@ class Agent:
             self.opp_fleet.clear()
             self.space.clear()
             self.space.move_obstacles(step)
-            if self.match_number <= Global.LAST_MATCH_WHEN_RELIC_CAN_APPEAR:
+            if self.match_number < Global.LAST_MATCH_WHEN_RELIC_CAN_APPEAR:
                 self.space.clear_exploration_info()
             return self.create_actions_array()
 
         points = int(obs["team_points"][self.team_id])
-
+        enemis_points = int(obs["team_points"][1 - self.team_id])
+        Global.ENEMY_POINTS.append(enemis_points)
+        
         # how many points did we score in the last step
         reward = max(0, points - self.fleet.points)
 
@@ -78,6 +80,11 @@ class Agent:
 
                 
         # print(f"[match {self.match_number}| step {self.match_step}]", file=stderr)
+        # self.show_exploration_map()
+        # for ship in self.fleet.ships:
+        #     if ship.node:
+        #         print(ship, ship.task, ship.target, file=stderr)
+
         find_relics(self)
         find_rewards(self)
         harvest(self)

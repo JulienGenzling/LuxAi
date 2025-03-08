@@ -12,7 +12,7 @@ class Global:
     MAX_ENERGY_PER_TILE = 20
     MAX_RELIC_NODES = 6
     LAST_MATCH_STEP_WHEN_RELIC_CAN_APPEAR = 50
-    LAST_MATCH_WHEN_RELIC_CAN_APPEAR = 1
+    LAST_MATCH_WHEN_RELIC_CAN_APPEAR = 2
 
     # We will find the exact value of these constants during the game
     UNIT_MOVE_COST = 1  # OPTIONS: list(range(1, 6))

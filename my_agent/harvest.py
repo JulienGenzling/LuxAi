@@ -34,28 +34,25 @@ def harvest(self):
 
         if not actions or ship.energy < energy:
             return False
+        
+        # Gérer le cas où on arrive vers notre zone mais on se fait dominer alors attendre un peu et gather de l'énergie avant d'invade
+        # if enemy_domination(self) and self.match_step < 70:
+        #     print("Alone and dominated", self.match_number*101+self.match_step, ship.unit_id, file=stderr)
+        #     return False
+        
+        # if domination(self):
+        #     print("domination, chill", self.match_number*101+self.match_step, ship.unit_id, file=stderr)
+        #     return False
 
         if not is_team_sector(self.team_id, target_node.x, target_node.y):
-            if not has_sufficient_energy(self, ship) or np.random.random() < 0.3:
+            if not has_sufficient_energy(self, ship) or (np.random.random() < 0.5 and ship.node.energy >= 7):
                 # print("NOT ENOUGH ENERGY !!!!!", file=stderr)
                 return False
 
         ship.task = "harvest"
         ship.target = target_node
         ship.action = actions[0]
-        next_node = self.space.get_node(*path[1])
 
-        # if np.random.random() < 0.3 and not is_team_sector(self.team_id, ship.node.x, ship.node.y):
-        #     for node in surrounding(self, ship.node):
-        #         if node.energy == None:
-        #             continue
-        #         if node.coordinates == path[1]:
-        #             continue
-        #         if node.energy > 0 and node.type != "asteroid":
-        #             ship.action = ActionType.from_coordinates(ship.coordinates, node.coordinates)
-
-        # Verify that there is not going to be a collision with a stronger enemy ship (frequent when harvesting, around the diagonal)
-        # Gagner au corps a corps
         return True
 
     booked_nodes = set()
@@ -104,6 +101,7 @@ def gather_energy(self, ship):
         actions = path_to_actions(path)
         if actions:
             ship.action = actions[0]
+    
             # print(f"GATHERING: Ship {ship.unit_id} heading to energy spot at {energy_spot}", file=stderr)
 
     # If at energy spot, consider sapping enemy reward nodes
@@ -185,3 +183,46 @@ def find_energy_spot(self, ship):
 def is_in_sap_range(source, target):
     sap_dist = max(abs(target[0] - source[0]), abs(target[1] - source[1]))
     return sap_dist <= Global.UNIT_SAP_RANGE
+
+
+def domination(self):
+    nb_reward_nodes = 0
+    nb_occupied_reward_nodes = 0
+
+    for node in self.space:
+        if node.reward:
+            nb_reward_nodes += 1
+            for ship in self.fleet:
+                if ship.node == node:
+                    nb_occupied_reward_nodes += 1
+
+    if nb_occupied_reward_nodes / nb_reward_nodes >= 0.4:
+        return True
+    
+    return False
+
+
+def enemy_domination(self):
+    nb_reward_nodes = 0
+    nb_occupied_reward_nodes = 0
+
+    for node in self.space:
+        if node.reward and is_team_sector(self.team_id, node.x, node.y):
+            nb_reward_nodes += 1
+            for ship in self.opp_fleet:
+                if ship.node == node:
+                    nb_occupied_reward_nodes += 1
+
+    if nb_occupied_reward_nodes >= 3:
+        return True
+    
+    return False
+    
+
+def alone(self, ship):
+    close_allied = 0
+    for allied_ship in self.fleet:
+        if manhattan_distance(allied_ship.coordinates, ship.coordinates) <= 3:
+            close_allied += 1
+    if close_allied <= 3:
+        return True

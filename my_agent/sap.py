@@ -1,23 +1,20 @@
 from sys import stderr
 import numpy as np
+import random
 
 from base import Global, ActionType, warp_point, NodeType, is_team_sector
 from pathfinding import astar, find_closest_target, create_weights, nearby_positions
 
 
 def sap(self, match_step, used_ship_for_dropoff):
-
     # Initial available ships
     available_ships = set()
     dropoff_id = used_ship_for_dropoff.unit_id if used_ship_for_dropoff != None else None
     
     for ship in self.fleet:
-        if (
-            ship.energy > Global.UNIT_SAP_COST
-            and ship.unit_id != dropoff_id
-            and not (ship.task == "harvest" and ship.node != ship.target)
-        ):
-            available_ships.add(ship)
+        if ship.energy > Global.UNIT_SAP_COST and ship.unit_id != dropoff_id:
+            if (not (ship.task == "harvest" and ship.node != ship.target)) or Global.UNIT_SAP_DROPOFF_FACTOR == 1:
+                available_ships.add(ship)
 
     # Ne pas target les ships tests qu'on target pour calculer le dropoff factor sinon ça va casser la mesure
     if hasattr(self, '_sap_tracking'):
@@ -29,7 +26,12 @@ def sap(self, match_step, used_ship_for_dropoff):
     sap_1(self, available_ships, dropoff_target_ids)
     if available_ships:
         sap_2(self, available_ships, dropoff_target_ids)  # Sap other ships
-    if available_ships and match_step >= 30:
+
+    for ship in list(available_ships): 
+        if ship.task == "harvest" and ship.node != ship.target:
+            available_ships.remove(ship)
+
+    if available_ships and match_step >= 30: 
         sap_3(self, available_ships)  # Blind sap on enemy reward nodes
 
 
@@ -84,6 +86,7 @@ def sap_1(self, available_ships, dropoff_target_ids):
                 ship.action = ActionType.sap
                 ship.sap = best_pos
                 available_ships.remove(ship)
+
 
 
 def _find_enemy_clusters(enemy_positions):
@@ -232,6 +235,9 @@ def sap_2(self, available_ships, dropoff_target_ids):
                     else:
                         max_ships_to_use = 1
                     
+                    # if Global.UNIT_SAP_DROPOFF_FACTOR == 1:
+                    #     max_ships_to_use += 1
+
                     max_ships_to_use = max(min(max_ships_to_use, enemy_ship.energy//Global.UNIT_SAP_COST + 1), 0)
 
                     ships_to_use = min(len(ships_in_range), max_ships_to_use)
@@ -275,39 +281,127 @@ def preshot(self, ship):
 
 
 def sap_3(self, available_ships):
-    reward_nodes = list(self.space.reward_nodes)
-
-    if not reward_nodes:
+    # # Optional early-exit: 50% chance to skip sap_3 entirely
+    # if np.random.rand() < 0.5:
+    #     return
+    
+    # 1) Gather invisible enemy nodes on the enemy's side
+    invisible_enemy_nodes = [
+        node for node in self.space.reward_nodes
+        if (not node.is_visible)
+        and (not is_team_sector(self.team_id, node.x, node.y))
+    ]
+    if not invisible_enemy_nodes:
         return
 
-    invisible_reward_nodes = [node for node in reward_nodes if not node.is_visible]
+    # 2) Build candidate sap centers around each invisible node
+    potential_positions = set()
+    for node in invisible_enemy_nodes:
+        x, y = node.x, node.y
+        potential_positions.add((x, y))
+        for dx in range(-1, 2):
+            for dy in range(-1, 2):
+                nx, ny = warp_point(x + dx, y + dy)
+                potential_positions.add((nx, ny))
 
-    if not invisible_reward_nodes:
+    if not potential_positions:
         return
 
-    invisible_reward_nodes = list(
-        filter(
-            lambda node: not is_team_sector(self.team_id, node.x, node.y),
-            invisible_reward_nodes,
-        )
-    )
+    # 3) Evaluate damage for each potential position
+    positions_and_damage = []
+    for sap_center in potential_positions:
+        cx, cy = sap_center
+        total_damage = 0.0
+        for node in invisible_enemy_nodes:
+            (ex, ey) = (node.x, node.y)
+            dist = max(abs(cx - ex), abs(cy - ey))
+            # direct = 1, splash = Global.UNIT_SAP_DROPOFF_FACTOR
+            if dist == 0:
+                dmg = 1.0
+            elif dist == 1:
+                dmg = Global.UNIT_SAP_DROPOFF_FACTOR
+            else:
+                dmg = 0.0
+            total_damage += dmg
 
-    for ship in list(available_ships):
-        if ship.coordinates is None or ship.energy <= Global.UNIT_SAP_COST:
-            continue
+        positions_and_damage.append((sap_center, total_damage))
 
-        for target_node in invisible_reward_nodes:
+    # Sort by damage descending
+    positions_and_damage.sort(key=lambda x: x[1], reverse=True)
+    if not positions_and_damage:
+        return
 
-            sap_dist = max(
-                abs(target_node.x - ship.coordinates[0]),
-                abs(target_node.y - ship.coordinates[1]),
-            )
+    # 4) We only proceed if best_damage >= threshold
+    best_damage = positions_and_damage[0][1]
+    threshold = 1 + Global.UNIT_SAP_DROPOFF_FACTOR
+    if best_damage < threshold:
+        return
 
-            if sap_dist <= Global.UNIT_SAP_RANGE and np.random.random() < 0.5:
-                ship.action = ActionType.sap
-                ship.sap = (target_node.x, target_node.y)
-                available_ships.remove(ship)
-                break
+    # Gather only those positions that have damage >= threshold
+    viable_positions = [pd for pd in positions_and_damage if pd[1] >= threshold]
+    if not viable_positions:
+        return
+
+    # 5) For each viable position, with probability sap_chance, try to assign a sap
+    for (tx, ty), dmg_val in viable_positions:
+
+        if np.random.rand() < 0.5: # min(Global.UNIT_SAP_DROPOFF_FACTOR, .75):
+            # Find all ships in range
+            in_range_ships = []
+            for ship in list(available_ships):
+                if ship.coordinates is None or ship.energy <= Global.UNIT_SAP_COST:
+                    continue
+                dist = max(abs(tx - ship.coordinates[0]), abs(ty - ship.coordinates[1]))
+                if dist <= Global.UNIT_SAP_RANGE:
+                    in_range_ships.append((ship, dist))
+
+            # Sort ships by distance descending, then by energy ascending (or adjust as you like)
+            in_range_ships.sort(key=lambda x: (-x[1], x[0].energy))
+            if not in_range_ships:
+                continue
+
+            # Pick the furthest ship to sap
+            best_ship, _ = in_range_ships[0]
+            best_ship.action = ActionType.sap
+            best_ship.sap = (tx, ty)
+            available_ships.remove(best_ship)
+
+            break
+                
+# def sap_3(self, available_ships):
+#     reward_nodes = list(self.space.reward_nodes)
+
+#     if not reward_nodes:
+#         return
+
+#     invisible_reward_nodes = [node for node in reward_nodes if not node.is_visible]
+
+#     if not invisible_reward_nodes:
+#         return
+
+#     invisible_reward_nodes = list(
+#         filter(
+#             lambda node: not is_team_sector(self.team_id, node.x, node.y),
+#             invisible_reward_nodes,
+#         )
+#     )
+
+#     for ship in list(available_ships):
+#         if ship.coordinates is None or ship.energy <= Global.UNIT_SAP_COST:
+#             continue
+
+#         for target_node in invisible_reward_nodes:
+
+#             sap_dist = max(
+#                 abs(target_node.x - ship.coordinates[0]),
+#                 abs(target_node.y - ship.coordinates[1]),
+#             )
+
+#             if sap_dist <= Global.UNIT_SAP_RANGE and np.random.random() < 0.5:
+#                 ship.action = ActionType.sap
+#                 ship.sap = (target_node.x, target_node.y)
+#                 available_ships.remove(ship)
+#                 break
 
 
 def _is_near_relic(self, ship):
@@ -321,3 +415,42 @@ def _is_near_relic(self, ship):
             if ship.coordinates == xy:
                 return True
     return False
+
+
+def sap_4(self):
+    for ship_id in list(self.opp_fleet.reward_ships.keys()):
+        info = self.opp_fleet.reward_ships[ship_id]
+        successful_sap = False
+        enemy_pos = info["node"].coordinates
+        enemy_energy = info["energy"]
+        ships_in_range = []
+        for ship in self.fleet:
+            if ship.coordinates is None:
+                continue
+
+            sap_dist = max(
+                abs(enemy_pos[0] - ship.coordinates[0]),
+                abs(enemy_pos[1] - ship.coordinates[1]),
+            )
+
+            if sap_dist <= Global.UNIT_SAP_RANGE:
+                ships_in_range.append((ship, sap_dist))
+
+        ships_in_range.sort(key=lambda x: (-x[1], x[0].energy))
+
+        ships_to_use = enemy_energy // Global.UNIT_SAP_COST
+
+        # Assign ships to sap this target
+        for i in range(ships_to_use):
+            if i >= len(ships_in_range):
+                break
+
+            ship, _ = ships_in_range[i]
+            ship.action = ActionType.sap
+            ship.sap = enemy_pos
+            successful_sap = True
+            # Update the energy we think the enemy has
+            info["energy"] -= Global.UNIT_SAP_COST
+            print("SHOOTING ", ship_id, self.match_step+self.match_number*101, file=stderr)
+        if successful_sap:
+            del self.opp_fleet.reward_ships[ship_id]

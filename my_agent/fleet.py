@@ -1,16 +1,18 @@
 from sys import stderr
 
 from ship import Ship
-from base import Global, NodeType
+from base import Global, NodeType, is_team_sector
 from space import Space
 
 from collections import Counter
+
 
 class Fleet:
     def __init__(self, team_id):
         self.team_id: int = team_id
         self.points: int = 0  # how many points have we scored in this match so far
         self.ships = [Ship(unit_id) for unit_id in range(Global.MAX_UNITS)]
+        self.reward_ships = {}
 
     def __repr__(self):
         return f"Fleet({self.team_id})"
@@ -85,3 +87,30 @@ class Fleet:
                             Global.NEBULA_ENERGY_REDUCTION = most_common
             else:
                 ship.clean()
+
+    def update_reward_ships(self, obs, space: Space):
+        updated_ships = []
+        for ship, active, position, energy in zip(
+            self.ships,
+            obs["units_mask"][self.team_id],
+            obs["units"]["position"][self.team_id],
+            obs["units"]["energy"][self.team_id],
+        ):
+            node = space.get_node(*position)
+            if node.reward and active and not is_team_sector(self.team_id, *node.coordinates):
+                self.reward_ships[ship.unit_id] = {
+                    "energy": energy,
+                    "node": node,
+                    "node_energy": node.energy,
+                }
+                updated_ships.append(ship.unit_id)
+
+        for ship_id in list(self.reward_ships.keys()):  # Iterate over a copy of the keys
+            if ship_id not in updated_ships:
+                energy = self.reward_ships[ship_id]["energy"]
+                if energy < 0:
+                    del self.reward_ships[ship_id]
+                    continue
+                self.reward_ships[ship_id]["energy"] += self.reward_ships[ship_id]["node_energy"]
+                if self.reward_ships[ship_id]["energy"] < 0:
+                    del self.reward_ships[ship_id]
