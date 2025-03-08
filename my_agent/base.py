@@ -55,6 +55,9 @@ class Global:
     # The energy on the unknown tiles will be used in the pathfinding
     HIDDEN_NODE_ENERGY = 0
 
+    # List of points of the enemy, to know if we should use sap_3 or not.
+    ENEMY_POINTS = []
+
 
 SPACE_SIZE = Global.SPACE_SIZE
 
